@@ -1,0 +1,30 @@
+# Build output
+.build/
+dist/
+Native/*/build/
+Native/*/.cache/
+*.o
+*.dll
+*.exe
+*.dylib
+
+# macOS / editors
+.DS_Store
+*.xcuserstate
+.swiftpm/
+.vscode/
+.idea/
+
+# Secrets must never be committed (the real signing key lives outside the repo)
+*.key
+*.pem
+*.p12
+*.p8
+.env
+.env.*
+steppe-secrets/
+sparkle_ed25519_private*
+
+# Logs and local test data
+*.log
+logs/

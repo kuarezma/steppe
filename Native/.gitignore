@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) Steppe contributors
+**/build/
+**/.cache/
+*.dll
+*.dylib
+*.so
+*.o
+*.exe
+*.a
+*.log
+*.tar.gz
+__pycache__/

@@ -10,6 +10,10 @@ struct SteppeApp: App {
     @StateObject private var controller = SteppeController(nativeDir: Bundle.main.resourceURL?.appendingPathComponent("Native"))
     @StateObject private var updater = UpdaterModel()
 
+    init() {
+        AppLanguage.applyStoredChoice()
+    }
+
     var body: some Scene {
         Window("Steppe", id: "main") {
             RootView()
@@ -119,5 +123,43 @@ final class UpdaterModel: NSObject, ObservableObject, SPUUpdaterDelegate {
         guard Self.busy else { return false }
         Self.pendingRelaunch = installHandler
         return true
+    }
+}
+
+
+/// The interface language. "Automatic" follows macOS (English unless the system language is Turkish).
+/// The choice is stored under its own key and applied at launch, before any text is looked up.
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case automatic, english, turkish
+    var id: String { rawValue }
+
+    static let defaultsKey = "steppeLanguage"
+
+    static var stored: AppLanguage {
+        AppLanguage(rawValue: UserDefaults.standard.string(forKey: defaultsKey) ?? "") ?? .automatic
+    }
+
+    static func applyStoredChoice() {
+        switch stored {
+        case .automatic: UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        case .english: UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
+        case .turkish: UserDefaults.standard.set(["tr"], forKey: "AppleLanguages")
+        }
+    }
+
+    static func choose(_ language: AppLanguage) {
+        UserDefaults.standard.set(language.rawValue, forKey: defaultsKey)
+        applyStoredChoice()
+    }
+
+    /// Starts a fresh copy of the app a moment after this one quits.
+    @MainActor
+    static func relaunch() {
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; /usr/bin/open \"$1\"", "sh", path]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 }

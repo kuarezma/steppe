@@ -13,6 +13,7 @@
 "Advanced" = "Advanced";
 "Another copy of Steppe is already working with this installation." = "Another copy of Steppe is already working with this installation.";
 "Applying macOS fixes" = "Applying macOS fixes";
+"Automatic" = "Automatic";
 "Balanced" = "Balanced";
 "Cancel" = "Cancel";
 "Change…" = "Change…";
@@ -52,6 +53,8 @@
 "Install Rosetta" = "Install Rosetta";
 "Install Steam" = "Install Steam";
 "Installs Steam in a separate Windows environment and asks you to sign in" = "Installs Steam in a separate Windows environment and asks you to sign in";
+"Interface language" = "Interface language";
+"Language" = "Language";
 "Launching Cossacks 3" = "Launching Cossacks 3";
 "Lowest resolution. Smoothest on any Mac." = "Lowest resolution. Smoothest on any Mac.";
 "Maintenance" = "Maintenance";
@@ -82,6 +85,8 @@
 "Repair…" = "Repair…";
 "Report a Problem" = "Report a Problem";
 "Resolution" = "Resolution";
+"Restart Now" = "Restart Now";
+"Restart Steppe to apply the language." = "Restart Steppe to apply the language.";
 "Restarting Steam" = "Restarting Steam";
 "Restore Original Audio Files" = "Restore Original Audio Files";
 "Restored %@ original files. They are replaced again on the next launch." = "Restored %@ original files. They are replaced again on the next launch.";

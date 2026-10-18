@@ -50,7 +50,7 @@ Prefer the terminal? This verifies the download's checksum, installs the app and
 curl -fsSL https://raw.githubusercontent.com/kuarezma/steppe/main/Scripts/install.sh | bash
 ```
 
-(Read [`Scripts/install.sh`](Scripts/install.sh) first; it is short.) Updates arrive inside the app via [Sparkle](https://sparkle-project.org); every update is signed with the project's EdDSA key, so you do not need to download anything again.
+(Read [`Scripts/install.sh`](Scripts/install.sh) first; it is short.) The interface is in English, with a Turkish option (*Settings → Language*; Turkish macOS selects it automatically). Updates arrive inside the app via [Sparkle](https://sparkle-project.org); every update is signed with the project's EdDSA key, so you do not need to download anything again.
 
 > **First launch from an external disk:** macOS asks whether Steppe may access removable volumes. Allow it; Steppe cannot store anything there otherwise.
 

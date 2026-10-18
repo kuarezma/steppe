@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var confirmUninstall = false
     @State private var confirmRepair = false
     @State private var toast: String?
+    @State private var language = AppLanguage.stored
+    @State private var languageChanged = false
 
     private var busy: Bool {
         switch controller.phase {
@@ -40,6 +42,25 @@ struct SettingsView: View {
                     }
                 }
                 LabeledContent("Right now", value: controller.plannedResolution.description)
+            }
+
+            Section("Language") {
+                Picker("Interface language", selection: $language) {
+                    Text("Automatic").tag(AppLanguage.automatic)
+                    Text(verbatim: "English").tag(AppLanguage.english)
+                    Text(verbatim: "Türkçe").tag(AppLanguage.turkish)
+                }
+                .onChange(of: language) { _, new in
+                    AppLanguage.choose(new)
+                    languageChanged = true
+                }
+                if languageChanged {
+                    HStack {
+                        Text("Restart Steppe to apply the language.").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Restart Now") { AppLanguage.relaunch() }.disabled(busy)
+                    }
+                }
             }
 
             Section("Game") {

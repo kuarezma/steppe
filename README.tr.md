@@ -46,7 +46,7 @@ Terminali tercih ederseniz, bu komut indirmenin sağlama toplamını doğrular, 
 curl -fsSL https://raw.githubusercontent.com/kuarezma/steppe/main/Scripts/install.sh | bash
 ```
 
-(Çalıştırmadan önce kısa olan [`Scripts/install.sh`](Scripts/install.sh) dosyasını okuyun.) Güncellemeler uygulamanın içinden [Sparkle](https://sparkle-project.org) ile gelir; her güncelleme projenin EdDSA anahtarıyla imzalıdır, yeniden indirmeniz gerekmez.
+(Çalıştırmadan önce kısa olan [`Scripts/install.sh`](Scripts/install.sh) dosyasını okuyun.) Arayüz varsayılan olarak İngilizcedir; *Ayarlar → Dil* menüsünden Türkçe seçilebilir (macOS Türkçe ise otomatik Türkçe açılır). Güncellemeler uygulamanın içinden [Sparkle](https://sparkle-project.org) ile gelir; her güncelleme projenin EdDSA anahtarıyla imzalıdır, yeniden indirmeniz gerekmez.
 
 > **Harici diskten ilk açılış:** macOS, Steppe'in çıkarılabilir birimlere erişip erişemeyeceğini sorar. İzin verin; aksi hâlde Steppe oraya hiçbir şey yazamaz.
 

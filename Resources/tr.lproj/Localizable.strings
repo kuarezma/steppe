@@ -13,6 +13,7 @@
 "Advanced" = "Gelişmiş";
 "Another copy of Steppe is already working with this installation." = "Steppe'in başka bir kopyası bu kurulumla zaten çalışıyor.";
 "Applying macOS fixes" = "macOS düzeltmeleri uygulanıyor";
+"Automatic" = "Otomatik";
 "Balanced" = "Dengeli";
 "Cancel" = "Vazgeç";
 "Change…" = "Değiştir…";
@@ -52,6 +53,8 @@
 "Install Rosetta" = "Rosetta'yı Kur";
 "Install Steam" = "Steam'i kur";
 "Installs Steam in a separate Windows environment and asks you to sign in" = "Steam'i ayrı bir Windows ortamına kurar ve giriş yapmanızı ister";
+"Interface language" = "Arayüz dili";
+"Language" = "Dil";
 "Launching Cossacks 3" = "Cossacks 3 başlatılıyor";
 "Lowest resolution. Smoothest on any Mac." = "En düşük çözünürlük. Her Mac'te en akıcı seçenek.";
 "Maintenance" = "Bakım";
@@ -82,6 +85,8 @@
 "Repair…" = "Onar…";
 "Report a Problem" = "Sorun Bildir";
 "Resolution" = "Çözünürlük";
+"Restart Now" = "Şimdi Yeniden Başlat";
+"Restart Steppe to apply the language." = "Dili uygulamak için Steppe'i yeniden başlatın.";
 "Restarting Steam" = "Steam yeniden başlatılıyor";
 "Restore Original Audio Files" = "Özgün Ses Dosyalarını Geri Yükle";
 "Restored %@ original files. They are replaced again on the next launch." = "%@ özgün dosya geri yüklendi. Bir sonraki başlatmada yeniden değiştirilirler.";

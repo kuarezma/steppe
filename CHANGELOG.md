@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.2]
+
+### Added
+- Language setting (Automatic, English, Türkçe) in Settings. English is the default unless macOS is set to Turkish.
+
 ## [0.1.1]
 
 First release built by the automated release workflow; no functional changes.

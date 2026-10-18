@@ -1,0 +1,45 @@
+name: Release
+
+# Push a tag such as v0.2.0 to build, sign the update feed and publish a GitHub release.
+# Required repository secret: SPARKLE_PRIVATE_KEY (the exported EdDSA private key; see docs/RELEASING.md).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mingw-w64
+        run: brew install mingw-w64
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build, package and sign the update feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          chmod 600 "$RUNNER_TEMP/sparkle.key"
+          swift package resolve
+          VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle.key" Scripts/release.sh
+          rm -f "$RUNNER_TEMP/sparkle.key"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="docs/release-notes/$VERSION.md"
+          [ -f "$NOTES" ] || { echo "Release notes for $VERSION" > "$RUNNER_TEMP/notes.md"; NOTES="$RUNNER_TEMP/notes.md"; }
+          gh release create "$GITHUB_REF_NAME" \
+            dist/release/Steppe-"$VERSION".dmg dist/release/Steppe-"$VERSION".zip \
+            dist/release/appcast.xml dist/release/SHA256SUMS.txt \
+            --title "Steppe $VERSION" --notes-file "$NOTES"

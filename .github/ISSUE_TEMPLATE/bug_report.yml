@@ -1,0 +1,29 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Steppe version
+      description: Steppe → About, or Settings → About
+    validations: { required: true }
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS version
+      placeholder: "MacBook Pro 14-inch 2023, M3 Pro, macOS 15.2"
+    validations: { required: true }
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: "Settings → Export Diagnostics, then paste the file here. Personal data is removed automatically; please still skim it."
+      render: text
+    validations: { required: true }

@@ -18,7 +18,7 @@ Starting with *Cossacks 3*.
 
 ---
 
-Cossacks 3 has no Mac version. Steppe makes the Windows version run well on an M‑series Mac **without you touching Wine, prefixes, registry keys or config files**. You press *Install & Play*, sign in to Steam in Steam's own window, and Steppe takes care of the rest: it fetches a verified Wine engine, builds an isolated Windows environment, installs Steam, lets Steam download the game, and tunes the graphics for *your* Mac and *your* screen on every launch.
+**Cossacks 3** is a classic real-time strategy game for PC (build an army, gather resources, fight). It has no Mac version. Steppe makes the Windows version run well on an M‑series Mac **without you touching Wine, prefixes, registry keys or config files**. You press *Install & Play*, sign in to Steam in Steam's own window, and Steppe takes care of the rest: it fetches a verified Wine engine, builds an isolated Windows environment, installs Steam, lets Steam download the game, and tunes the graphics for *your* Mac and *your* screen on every launch.
 
 It is free, open source, and built so other people (and other games) can build on it.
 

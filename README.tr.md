@@ -14,16 +14,16 @@
 
 ---
 
-Cossacks 3'ün Mac sürümü yok. Steppe, Windows sürümünün M serisi bir Mac'te **Wine, prefix, kayıt defteri veya yapılandırma dosyalarıyla uğraşmadan** iyi çalışmasını sağlar. *Kur ve Oyna*'ya basarsınız, Steam'e Steam'in kendi penceresinde giriş yaparsınız; gerisini Steppe halleder: doğrulanmış bir Wine motoru indirir, yalıtılmış bir Windows ortamı kurar, Steam'i yükler, oyunu Steam'e indirtir ve her açılışta grafikleri **sizin Mac'inize ve ekranınıza** göre ayarlar.
+**Cossacks 3**, PC için çıkmış klasik bir gerçek zamanlı strateji oyunudur (ordu kur, kaynak topla, savaş). Mac sürümü yok. Steppe, Windows sürümünün M serisi bir Mac'te **Wine, prefix, kayıt defteri veya yapılandırma dosyalarıyla uğraşmadan** iyi çalışmasını sağlar. *Kur ve Oyna*'ya basarsınız, Steam'e Steam'in kendi penceresinde giriş yaparsınız; gerisini Steppe halleder: doğrulanmış bir Wine motoru indirir, yalıtılmış bir Windows ortamı kurar, Steam'i yükler, oyunu Steam'e indirtir ve her açılışta grafikleri **sizin Mac'inize ve ekranınıza** göre ayarlar.
 
 Ücretsiz, açık kaynak ve başkalarının (ve başka oyunların) üzerine geliştirebileceği şekilde tasarlandı.
 
 ## Ekran görüntüleri
 
 <p align="center">
-  <img src="docs/images/welcome.png" width="32%" alt="Karşılama ekranı">
-  <img src="docs/images/setup.png" width="32%" alt="Kurulum">
-  <img src="docs/images/signin.png" width="32%" alt="Steam'e giriş">
+  <img src="docs/images/tr-welcome.png" width="32%" alt="Karşılama ekranı">
+  <img src="docs/images/tr-setup.png" width="32%" alt="Kurulum">
+  <img src="docs/images/tr-signin.png" width="32%" alt="Steam'e giriş">
 </p>
 
 ## Gerekenler

@@ -18,6 +18,13 @@ About 16 GB are needed (the game is ~9 GB). Free space or press *Change…* to p
 
 Make sure *Remember me* is ticked in Steam's login window. Steppe quits Steam after the game so your Cloud saves sync; the session is kept inside the Windows environment.
 
+## Steam microphone permission does not work
+
+Steppe declares microphone access (`NSMicrophoneUsageDescription` and `com.apple.security.device.audio-input`) and forwards it to the Wine/Steam child processes on your MacBook. If you previously denied microphone access or updated from an earlier ad-hoc build:
+
+- Open **Settings → Game → Microphone access** in Steppe and click **Reset Microphone Permission** (or **Allow Microphone**).
+- Or check **System Settings → Privacy & Security → Microphone** and make sure **Steppe** is enabled.
+
 ## The game does not start / the app waits at “Waiting for Steam”
 
 - Look at the Steam window; it may need you to sign in, accept an update or confirm an install.

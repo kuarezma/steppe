@@ -40,6 +40,7 @@ public final class SteppeController: ObservableObject {
     /// Free space still needed to finish the installation (less once the engine is in place).
     @Published public private(set) var requiredFreeBytesNow: Int64 = SteppeController.requiredFreeBytes
     @Published public private(set) var rosettaMissing = false
+    @Published public private(set) var microphoneStatus: MicrophoneStatus = MicrophonePermission.status()
     @Published public private(set) var lastSessionNote: String?
     @Published public private(set) var downloadSpeed: Double = 0
 
@@ -103,6 +104,7 @@ public final class SteppeController: ObservableObject {
     /// Re-reads everything from disk and decides which screen to show.
     public func refresh() async {
         display = DisplayInfo.main()
+        microphoneStatus = MicrophonePermission.status()
         await loadSettingsIfNeeded()
         let root = paths.root
         freeBytes = await Task.detached { SystemInfo.freeBytes(at: root) }.value
@@ -374,10 +376,30 @@ public final class SteppeController: ObservableObject {
 
     // MARK: Stage: sign-in + game download
 
+    /// Ensures the Wine engine binaries carry audio-input entitlements and macOS TCC microphone permission
+    /// is settled before Steam initializes CoreAudio (`winecoreaudio.drv`).
+    private func prepareMicrophoneAndEngineForSteam() async {
+        await WinePatcher.ensureAudioEntitlements(engineRoot: paths.wineBundle)
+        microphoneStatus = await MicrophonePermission.ensureAccessForSteam(defaults: defaults)
+    }
+
+    public func requestMicrophoneAccess() {
+        Task {
+            microphoneStatus = await MicrophonePermission.ensureAccessForSteam(defaults: defaults)
+        }
+    }
+
+    public func resetMicrophoneAccess() {
+        Task {
+            microphoneStatus = await MicrophonePermission.resetAndRequestAccess(defaults: defaults)
+        }
+    }
+
     /// Opens Steam so the user can sign in (also used by the "Open Steam" button).
     public func openSteam() {
         Task {
             guard !(await steam.isClientRunning()) else { return }
+            await prepareMicrophoneAndEngineForSteam()
             steamLaunchGraceUntil = Date().addingTimeInterval(25)
             _ = try? steam.launchClient(environment: environment.setup(), logName: "steam-setup.log")
         }
@@ -390,6 +412,7 @@ public final class SteppeController: ObservableObject {
         let env = environment.setup()
         if !(await kit.isClientRunning()) {
             set(.signIn, .running(progress: nil, detail: L("Starting Steam")))
+            await prepareMicrophoneAndEngineForSteam()
             steamLaunchGraceUntil = Date().addingTimeInterval(25)
             try kit.launchClient(environment: env, logName: "steam-setup.log")
         }
@@ -500,6 +523,7 @@ public final class SteppeController: ObservableObject {
             try? FileManager.default.createDirectory(at: paths.patchLogFile.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: paths.patchLogFile)
             phase = .playing(L("Starting Steam"))
+            await prepareMicrophoneAndEngineForSteam()
             try kit.launchClient(arguments: ["-applaunch", String(manifest.steam.appID)], environment: environment.game(settings: settings), logName: "game-session.log")
             Log.shared.info("Launched at \(resolution); speed libraries: \(speedStatus)")
             startDialogHelper()
@@ -627,6 +651,10 @@ public final class SteppeController: ObservableObject {
         // Dropping the markers makes the setup flow re-verify and rebuild each component.
         try? FileManager.default.removeItem(at: paths.engineMarker)
         try? FileManager.default.removeItem(at: paths.frameworksMarker)
+        Task {
+            await MicrophonePermission.resetTCC()
+            self.microphoneStatus = MicrophonePermission.status()
+        }
         for stage in SetupStage.allCases { stages[stage] = .pending }
         startSetup()
     }
@@ -672,6 +700,7 @@ public final class SteppeController: ObservableObject {
             display: display,
             resolution: plannedResolution,
             settings: settings,
+            microphoneStatus: microphoneStatus,
             stageSummary: SetupStage.allCases.map { "\($0): \(String(describing: stages[$0] ?? .pending))" },
             phase: String(describing: phase),
             freeBytes: freeBytes,

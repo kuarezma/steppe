@@ -67,6 +67,10 @@ public enum PrefixBuilder {
             try await runner.runChecked(["reg", "add", key, "/v", "Debugger", "/t", "REG_SZ", "/d", "", "/f"], environment: env, timeout: 60)
         }
 
+        // Ensure CoreAudio is explicitly active for both output and MacBook microphone input (mmdevapi / DirectSoundCapture).
+        let drivers = #"HKCU\Software\Wine\Drivers"#
+        try await runner.runChecked(["reg", "add", drivers, "/v", "Audio", "/t", "REG_SZ", "/d", "coreaudio", "/f"], environment: env, timeout: 60)
+
         // Audio buffering that keeps the game's sound free of crackle on macOS (values measured on Apple silicon).
         let directSound = #"HKCU\Software\Wine\DirectSound"#
         for (name, value) in [("HelMargin", "10"), ("MaxHardwareChannels", "16"), ("SndQueueMax", "20"),

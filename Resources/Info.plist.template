@@ -20,6 +20,7 @@
     <key>LSRequiresNativeExecution</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>Copyright © Steppe contributors. MIT License.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Steppe passes microphone access to Steam and the game when you use voice chat.</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>SUAllowsAutomaticUpdates</key><true/>

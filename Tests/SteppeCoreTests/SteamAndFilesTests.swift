@@ -258,3 +258,33 @@ final class InstallLockTests: XCTestCase {
         XCTAssertNotNil(InstallLock(root: root), "the lock is free again once released")
     }
 }
+
+final class MicrophoneAndEntitlementsTests: XCTestCase {
+    func testMicrophonePermissionStatusAndLabels() {
+        let status = MicrophonePermission.status()
+        XCTAssertFalse(status.localizedLabel.isEmpty)
+        for s in [MicrophoneStatus.authorized, .denied, .restricted, .notDetermined] {
+            XCTAssertFalse(s.localizedLabel.isEmpty)
+        }
+    }
+
+    func testWineAudioEntitlementsSigning() async throws {
+        let fm = FileManager.default
+        let engineRoot = fm.temporaryDirectory.appendingPathComponent("steppe-engine-ent-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: engineRoot) }
+        let binDir = engineRoot.appendingPathComponent("bin")
+        try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+        let dummyWine = binDir.appendingPathComponent("wine")
+        try fm.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: dummyWine)
+
+        await WinePatcher.ensureAudioEntitlements(engineRoot: engineRoot)
+
+        let inspect = try await ProcessRunner.run(
+            URL(fileURLWithPath: "/usr/bin/codesign"),
+            arguments: ["-d", "--entitlements", "-", dummyWine.path],
+            timeout: 15
+        )
+        let combined = inspect.stdout + inspect.stderr
+        XCTAssertTrue(combined.contains("com.apple.security.device.audio-input"), "wine binary must carry audio-input entitlement")
+    }
+}

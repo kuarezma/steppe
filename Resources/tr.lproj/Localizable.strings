@@ -11,6 +11,8 @@
 "About %@ of free space is needed. Free up space or choose another disk." = "Yaklaşık %@ boş alan gerekiyor. Yer açın veya başka bir disk seçin.";
 "Active" = "Etkin";
 "Advanced" = "Gelişmiş";
+"Allow Microphone" = "Mikrofona İzin Ver";
+"Allowed" = "İzin verildi";
 "Another copy of Steppe is already working with this installation." = "Steppe'in başka bir kopyası bu kurulumla zaten çalışıyor.";
 "Applying macOS fixes" = "macOS düzeltmeleri uygulanıyor";
 "Automatic" = "Otomatik";
@@ -32,6 +34,7 @@
 "Cossacks 3 is still running" = "Cossacks 3 hâlâ çalışıyor";
 "Could not start %@" = "%@ başlatılamadı";
 "Creating the Windows environment" = "Windows ortamı oluşturuluyor";
+"Denied" = "Reddedildi";
 "Diagnostics saved. Personal data is removed from the file." = "Tanılama kaydedildi. Kişisel veriler dosyadan çıkarıldı.";
 "Download Cossacks 3" = "Cossacks 3'ü indir";
 "Download the game engine" = "Oyun motorunu indir";
@@ -58,10 +61,13 @@
 "Launching Cossacks 3" = "Cossacks 3 başlatılıyor";
 "Lowest resolution. Smoothest on any Mac." = "En düşük çözünürlük. Her Mac'te en akıcı seçenek.";
 "Maintenance" = "Bakım";
+"Microphone access" = "Mikrofon erişimi";
 "Native" = "Yerel";
 "Not available yet" = "Henüz yok";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Yeterli boş disk alanı yok: %@ gerekli, %@ mevcut. Yer açın veya başka bir disk seçin.";
+"Not requested yet" = "Henüz istenmedi";
 "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure." = "Tek tıkla her şey Mac'inize ve ekranınıza göre kurulur. Kendi Steam hesabınızla giriş yaparsınız; ayarlanacak başka bir şey yok.";
+"Open Microphone Settings" = "Mikrofon Ayarlarını Aç";
 "Open Steppe Folder" = "Steppe Klasörünü Aç";
 "Performance" = "Performans";
 "Play" = "Oyna";
@@ -84,6 +90,7 @@
 "Repair Steppe?" = "Steppe onarılsın mı?";
 "Repair…" = "Onar…";
 "Report a Problem" = "Sorun Bildir";
+"Reset Microphone Permission" = "Mikrofon İznini Sıfırla";
 "Resolution" = "Çözünürlük";
 "Restart Now" = "Şimdi Yeniden Başlat";
 "Restart Steppe to apply the language." = "Dili uygulamak için Steppe'i yeniden başlatın.";

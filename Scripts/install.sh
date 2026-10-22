@@ -36,4 +36,5 @@ if pgrep -x Steppe >/dev/null; then echo "Please quit Steppe first."; exit 1; fi
 rm -rf /Applications/Steppe.app
 ditto "$TMP/mnt/Steppe.app" /Applications/Steppe.app
 xattr -dr com.apple.quarantine /Applications/Steppe.app 2>/dev/null || true
+/usr/bin/tccutil reset Microphone io.github.kuarezma.steppe 2>/dev/null || true
 echo "Installed. Open Steppe from Applications."

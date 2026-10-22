@@ -11,6 +11,8 @@
 "About %@ of free space is needed. Free up space or choose another disk." = "About %@ of free space is needed. Free up space or choose another disk.";
 "Active" = "Active";
 "Advanced" = "Advanced";
+"Allow Microphone" = "Allow Microphone";
+"Allowed" = "Allowed";
 "Another copy of Steppe is already working with this installation." = "Another copy of Steppe is already working with this installation.";
 "Applying macOS fixes" = "Applying macOS fixes";
 "Automatic" = "Automatic";
@@ -32,6 +34,7 @@
 "Cossacks 3 is still running" = "Cossacks 3 is still running";
 "Could not start %@" = "Could not start %@";
 "Creating the Windows environment" = "Creating the Windows environment";
+"Denied" = "Denied";
 "Diagnostics saved. Personal data is removed from the file." = "Diagnostics saved. Personal data is removed from the file.";
 "Download Cossacks 3" = "Download Cossacks 3";
 "Download the game engine" = "Download the game engine";
@@ -58,10 +61,13 @@
 "Launching Cossacks 3" = "Launching Cossacks 3";
 "Lowest resolution. Smoothest on any Mac." = "Lowest resolution. Smoothest on any Mac.";
 "Maintenance" = "Maintenance";
+"Microphone access" = "Microphone access";
 "Native" = "Native";
 "Not available yet" = "Not available yet";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk.";
+"Not requested yet" = "Not requested yet";
 "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure." = "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure.";
+"Open Microphone Settings" = "Open Microphone Settings";
 "Open Steppe Folder" = "Open Steppe Folder";
 "Performance" = "Performance";
 "Play" = "Play";
@@ -84,6 +90,7 @@
 "Repair Steppe?" = "Repair Steppe?";
 "Repair…" = "Repair…";
 "Report a Problem" = "Report a Problem";
+"Reset Microphone Permission" = "Reset Microphone Permission";
 "Resolution" = "Resolution";
 "Restart Now" = "Restart Now";
 "Restart Steppe to apply the language." = "Restart Steppe to apply the language.";

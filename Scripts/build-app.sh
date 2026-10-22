@@ -59,6 +59,7 @@ cp dist/tmp/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 for lang in en tr; do
     mkdir -p "$APP/Contents/Resources/$lang.lproj"
     cp "Resources/$lang.lproj/Localizable.strings" "$APP/Contents/Resources/$lang.lproj/"
+    [ -f "Resources/$lang.lproj/InfoPlist.strings" ] && cp "Resources/$lang.lproj/InfoPlist.strings" "$APP/Contents/Resources/$lang.lproj/"
 done
 cp Native/glfix/build/libglfix.dylib \
    Native/vorbis-fast/build/ogg.dll Native/vorbis-fast/build/vorbis.dll Native/vorbis-fast/build/vorbisfile.dll \
@@ -76,14 +77,19 @@ ditto "$SPARKLE" "$APP/Contents/Frameworks/Sparkle.framework"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Steppe" 2>/dev/null || true
 
 echo "==> Signing (identity: $IDENTITY)"
+ENTITLEMENTS="Config/Steppe.entitlements"
 SIGN=(codesign --force --sign "$IDENTITY" --timestamp=none)
-[ "$IDENTITY" = "-" ] || SIGN=(codesign --force --sign "$IDENTITY" --timestamp --options runtime)
+APP_SIGN=(codesign --force --sign "$IDENTITY" --timestamp=none --entitlements "$ENTITLEMENTS")
+if [ "$IDENTITY" != "-" ]; then
+    SIGN=(codesign --force --sign "$IDENTITY" --timestamp --options runtime)
+    APP_SIGN=(codesign --force --sign "$IDENTITY" --timestamp --options runtime --entitlements "$ENTITLEMENTS")
+fi
 FW="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 for nested in "$FW/XPCServices/Installer.xpc" "$FW/XPCServices/Downloader.xpc" "$FW/Updater.app" "$FW/Autoupdate"; do
     [ -e "$nested" ] && "${SIGN[@]}" "$nested"
 done
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
-"${SIGN[@]}" "$APP"
+"${APP_SIGN[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
 
 echo "==> Checks"

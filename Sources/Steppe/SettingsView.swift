@@ -65,6 +65,21 @@ struct SettingsView: View {
 
             Section("Game") {
                 Toggle("Quit Steam when the game closes", isOn: $controller.settings.quitSteamAfterGame)
+                LabeledContent("Microphone access") {
+                    HStack(spacing: 8) {
+                        Text(verbatim: controller.microphoneStatus.localizedLabel)
+                            .foregroundStyle(.secondary)
+                        switch controller.microphoneStatus {
+                        case .notDetermined:
+                            Button("Allow Microphone") { controller.requestMicrophoneAccess() }
+                        case .denied, .restricted:
+                            Button("Reset Microphone Permission") { controller.resetMicrophoneAccess() }
+                            Button("Open Microphone Settings") { openMicrophonePrivacySettings() }
+                        case .authorized:
+                            EmptyView()
+                        }
+                    }
+                }
             }
 
             Section("Advanced") {
@@ -147,5 +162,10 @@ struct SettingsView: View {
         guard let gameDir = SteamKit(paths: controller.paths).gameDirectory else { return }
         let count = String(GameFiles.restoreOriginals(in: gameDir))
         toast = String(localized: "Restored \(count) original files. They are replaced again on the next launch.")
+    }
+
+    private func openMicrophonePrivacySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") else { return }
+        NSWorkspace.shared.open(url)
     }
 }

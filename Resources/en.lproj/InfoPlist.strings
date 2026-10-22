@@ -1,0 +1,2 @@
+/* Localized Info.plist keys (English). */
+"NSMicrophoneUsageDescription" = "Steppe passes microphone access to Steam and the game when you use voice chat.";

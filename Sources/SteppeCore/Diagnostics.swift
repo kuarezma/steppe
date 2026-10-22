@@ -5,6 +5,7 @@ struct DiagnosticsSnapshot {
     let display: DisplayInfo?
     let resolution: Resolution
     let settings: AppSettings
+    let microphoneStatus: MicrophoneStatus
     let stageSummary: [String]
     let phase: String
     let freeBytes: Int64
@@ -37,6 +38,7 @@ enum Diagnostics {
         }
         lines.append("Render resolution: \(s.resolution) (preset: \(s.settings.preset.rawValue), custom: \(s.settings.useCustomResolution))")
         lines.append("Settings: quitSteamAfterGame=\(s.settings.quitSteamAfterGame) mathPatches=\(s.settings.experimentalMathPatches) frameTimes=\(s.settings.recordFrameTimes)")
+        lines.append("Microphone permission: \(s.microphoneStatus.rawValue)")
         lines.append("Free disk: \(ByteCountFormatter.string(fromByteCount: s.freeBytes, countStyle: .file))")
         lines.append("Engine: \(RuntimeManifest.current.engine.name), frameworks: \(RuntimeManifest.current.template.name)")
         lines.append("Phase: \(s.phase)")

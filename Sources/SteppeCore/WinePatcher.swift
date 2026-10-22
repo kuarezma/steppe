@@ -24,6 +24,29 @@ public enum WinePatchError: Error, LocalizedError, Equatable {
 public enum WinePatcher {
     private static let codesign = URL(fileURLWithPath: "/usr/bin/codesign")
 
+    /// Entitlements required so macOS TCC and Hardened Runtime allow Wine/Steam child processes
+    /// to open the MacBook microphone (`winecoreaudio.drv`) and run translated x86_64 code.
+    public static let audioAndRuntimeEntitlementsXML = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>com.apple.security.device.audio-input</key>
+        <true/>
+        <key>com.apple.security.cs.allow-jit</key>
+        <true/>
+        <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+        <true/>
+        <key>com.apple.security.cs.disable-executable-page-protection</key>
+        <true/>
+        <key>com.apple.security.cs.disable-library-validation</key>
+        <true/>
+        <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+        <true/>
+    </dict>
+    </plist>
+    """
+
     public static func apply(engineRoot: URL, patch: RuntimeManifest.WinemacPatch) async throws {
         let target = engineRoot.appendingPathComponent(patch.relativePath)
         guard FileManager.default.fileExists(atPath: target.path) else {
@@ -57,6 +80,39 @@ public enum WinePatcher {
 
         // Sign under the final name so the code-signature identifier matches the file.
         try await sign(arguments: ["--force", "--sign", "-", target.path])
+        await ensureAudioEntitlements(engineRoot: engineRoot)
+    }
+
+    /// Ensures the Wine loader binaries and CoreAudio driver in an installed engine bundle carry
+    /// the `com.apple.security.device.audio-input` entitlement so Steam can use the MacBook microphone.
+    public static func ensureAudioEntitlements(engineRoot: URL) async {
+        let fm = FileManager.default
+        let candidates = [
+            "bin/wine",
+            "bin/wine64",
+            "bin/wine-preloader",
+            "bin/wine64-preloader",
+            "bin/wineserver",
+            "lib/wine/x86_64-unix/winecoreaudio.so",
+        ]
+        let existing = candidates.map { engineRoot.appendingPathComponent($0) }.filter { fm.fileExists(atPath: $0.path) }
+        guard !existing.isEmpty else { return }
+
+        let entFile = fm.temporaryDirectory.appendingPathComponent("steppe-wine-entitlements-\(UUID().uuidString).plist")
+        defer { try? fm.removeItem(at: entFile) }
+        guard (try? Data(audioAndRuntimeEntitlementsXML.utf8).write(to: entFile, options: .atomic)) != nil else { return }
+
+        for binary in existing {
+            if let inspect = try? await ProcessRunner.run(codesign, arguments: ["-d", "--entitlements", "-", binary.path], timeout: 15),
+               (inspect.stdout + inspect.stderr).contains("com.apple.security.device.audio-input") {
+                continue
+            }
+            if binary.lastPathComponent.hasSuffix(".so") {
+                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", binary.path], timeout: 30)
+            } else {
+                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", "--entitlements", entFile.path, binary.path], timeout: 30)
+            }
+        }
     }
 
     /// Pure byte-level step, separated for unit tests.

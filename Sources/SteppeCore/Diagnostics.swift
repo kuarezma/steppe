@@ -3,6 +3,7 @@ import Foundation
 struct DiagnosticsSnapshot {
     let system: SystemInfo
     let display: DisplayInfo?
+    let displayModes: DisplayModes?
     let resolution: Resolution
     let settings: AppSettings
     let microphoneStatus: MicrophoneStatus
@@ -35,6 +36,11 @@ enum Diagnostics {
         lines.append("Mac: \(s.system.chipName), \(s.system.memoryGB) GB, macOS \(s.system.macOSVersion)")
         if let d = s.display {
             lines.append("Display: \(d.size) @\(d.scale)x, up to \(d.maxRefreshRate) Hz")
+        }
+        if let m = s.displayModes {
+            lines.append("Windows monitor: \(m.current), modes: \(m.all.map(\.description).joined(separator: " "))")
+        } else {
+            lines.append("Windows monitor: not probed yet")
         }
         lines.append("Render resolution: \(s.resolution) (preset: \(s.settings.preset.rawValue), custom: \(s.settings.useCustomResolution))")
         lines.append("Settings: quitSteamAfterGame=\(s.settings.quitSteamAfterGame) mathPatches=\(s.settings.experimentalMathPatches) frameTimes=\(s.settings.recordFrameTimes)")

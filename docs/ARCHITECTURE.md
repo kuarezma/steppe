@@ -14,7 +14,7 @@ Steppe.app (SwiftUI)                steppe-cli (developer tool)
 Native/
    glfix/          x86_64 dylib injected into Wine (OpenGL fixes)
    vorbis-fast/    32-bit Windows DLLs (audio cache + startup patches)
-   dialog-helper/  32-bit Windows helper that runs inside the prefix
+   dialog-helper/  32-bit Windows helpers that run inside the prefix (startup box, display modes)
 ```
 
 ## Data layout (default `~/Library/Application Support/Steppe`)
@@ -45,7 +45,7 @@ Every stage checks disk state first, so setup is resumable and idempotent. Marke
 
 1. Stop Steam/Wine of this engine if running (so graphics fixes get injected into Steam and the game).
 2. Re-apply prefix isolation.
-3. Choose the render resolution for the *current* main display (`ResolutionPlanner`) and write it into every existing `profile.cfg` (`ProfileTuner`, backup `profile.cfg.steppe-orig`).
+3. Run `list-modes.exe` inside the prefix, plan the render resolution for the monitor Windows reports as primary (`ResolutionPlanner`), snap it to a mode Windows lists (`DisplayModes`) and write it into every existing `profile.cfg` (`ProfileTuner`, backup `profile.cfg.steppe-orig`). Without the helper, the Mac's menu-bar display is used unchecked.
 4. `GameBootstrap` creates first-run files if they are missing (see below).
 5. `GameFiles` replaces `ogg.dll`/`vorbis.dll`/`vorbisfile.dll` only if they are still the verified originals (backup `*.steppe-orig`).
 6. Start `Steam.exe -applaunch 333420` with `DYLD_INSERT_LIBRARIES=libglfix.dylib`, `GLFIX_REMAP=2`, `WINEESYNC=0`.

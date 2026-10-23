@@ -34,6 +34,8 @@ public final class SteppeController: ObservableObject {
     @Published public private(set) var paths: SteppePaths
     @Published public private(set) var systemInfo: SystemInfo
     @Published public private(set) var display: DisplayInfo?
+    /// Display modes Windows reported at the last launch; `nil` until then or if the probe failed.
+    @Published public private(set) var displayModes: DisplayModes?
     @Published public private(set) var freeBytes: Int64 = 0
     /// False until the first disk check has finished (it can wait on a macOS permission prompt for external disks).
     @Published public private(set) var hasCheckedDisk = false
@@ -86,7 +88,7 @@ public final class SteppeController: ObservableObject {
     private var runner: WineRunner { WineRunner(paths: paths) }
 
     public var plannedResolution: Resolution {
-        settings.resolution(for: display?.size ?? Resolution(width: 1440, height: 900))
+        settings.resolution(for: display?.size ?? Resolution(width: 1440, height: 900), modes: displayModes)
     }
 
     public var isSupportedMac: Bool { unsupportedReason == nil }
@@ -103,7 +105,7 @@ public final class SteppeController: ObservableObject {
 
     /// Re-reads everything from disk and decides which screen to show.
     public func refresh() async {
-        display = DisplayInfo.main()
+        display = DisplayInfo.primary()
         microphoneStatus = MicrophonePermission.status()
         await loadSettingsIfNeeded()
         let root = paths.root
@@ -514,8 +516,13 @@ public final class SteppeController: ObservableObject {
             }
             try PrefixBuilder.isolate(prefix: paths.prefixDir)
 
-            display = DisplayInfo.main()
+            display = DisplayInfo.primary()
+            phase = .playing(L("Preparing"))
+            displayModes = await probeDisplayModes()
             let resolution = plannedResolution
+            if let modes = displayModes {
+                Log.shared.info("Windows monitor \(modes.current), \(modes.all.count) modes; planned \(settings.resolution(for: modes.current)), writing \(resolution)")
+            }
             seedFirstRunFiles(resolution)
             applyTuning(resolution)
             let speedStatus = installSpeedLibraries()
@@ -606,20 +613,50 @@ public final class SteppeController: ObservableObject {
 
     /// Starts the tiny in-prefix helper that presses OK on the game's informational "hardware acceleration" box.
     private func startDialogHelper() {
-        guard let nativeDir else { return }
-        let source = nativeDir.appendingPathComponent("dismiss-dialog.exe")
-        guard FileManager.default.fileExists(atPath: source.path) else {
+        guard installTool("dismiss-dialog.exe") else {
             Log.shared.warn("dismiss-dialog.exe missing; the startup box will need one click")
             return
         }
         do {
-            try FileManager.default.createDirectory(at: paths.toolsDir, withIntermediateDirectories: true)
-            let target = paths.toolsDir.appendingPathComponent("dismiss-dialog.exe")
-            try? FileManager.default.removeItem(at: target)
-            try FileManager.default.copyItem(at: source, to: target)
             try runner.spawn([SteppePaths.dialogHelperWindowsPath, "600"], environment: environment.game(settings: settings), logName: "dialog-helper.log")
         } catch {
             Log.shared.warn("Could not start the dialog helper: \(error.localizedDescription)")
+        }
+    }
+
+    /// Asks Windows inside the prefix which display modes exist (`list-modes.exe`). `nil` if the helper is missing or fails.
+    private func probeDisplayModes() async -> DisplayModes? {
+        guard installTool("list-modes.exe") else {
+            Log.shared.warn("list-modes.exe missing; the resolution is not checked against Windows display modes")
+            return nil
+        }
+        do {
+            let result = try await runner.run([SteppePaths.listModesWindowsPath], environment: environment.game(settings: settings), timeout: 60)
+            guard let modes = DisplayModes.parse(result.stdout) else {
+                Log.shared.warn("list-modes.exe reported no display modes (exit \(result.exitCode))")
+                return nil
+            }
+            return modes
+        } catch {
+            Log.shared.warn("Could not list display modes: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Copies a helper program from the app bundle into the prefix's tools folder. False if it is not bundled or cannot be copied.
+    private func installTool(_ name: String) -> Bool {
+        guard let nativeDir else { return false }
+        let source = nativeDir.appendingPathComponent(name)
+        guard FileManager.default.fileExists(atPath: source.path) else { return false }
+        do {
+            try FileManager.default.createDirectory(at: paths.toolsDir, withIntermediateDirectories: true)
+            let target = paths.toolsDir.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: target)
+            try FileManager.default.copyItem(at: source, to: target)
+            return true
+        } catch {
+            Log.shared.warn("Could not copy \(name) into the prefix: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -698,6 +735,7 @@ public final class SteppeController: ObservableObject {
         DiagnosticsSnapshot(
             system: systemInfo,
             display: display,
+            displayModes: displayModes,
             resolution: plannedResolution,
             settings: settings,
             microphoneStatus: microphoneStatus,

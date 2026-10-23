@@ -36,6 +36,7 @@ public struct SteppePaths: Sendable {
     /// Helper programs that run inside the prefix (copied from the app bundle when needed).
     public var toolsDir: URL { driveC.appendingPathComponent("steppe-tools", isDirectory: true) }
     public static let dialogHelperWindowsPath = #"C:\steppe-tools\dismiss-dialog.exe"#
+    public static let listModesWindowsPath = #"C:\steppe-tools\list-modes.exe"#
 
     public var driveC: URL { prefixDir.appendingPathComponent("drive_c", isDirectory: true) }
     public var steamDir: URL { driveC.appendingPathComponent("Steam", isDirectory: true) }

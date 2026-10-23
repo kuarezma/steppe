@@ -178,11 +178,13 @@ public enum ProcessScanner {
     /// Processes started from our Wine engine. Wine rewrites the process title of its children, so the
     /// environment is not visible; the executable path is what reliably tells them apart from other Wine installs.
     public static func processes(inEngine bundle: URL) async -> [RunningProcess] {
-        let prefix = bundle.path.precomposedStringWithCanonicalMapping + "/"
+        // proc_pidpath reports the canonical path, so match the symlink-resolved bundle path too.
+        let prefixes = [bundle.path, bundle.resolvingSymlinksInPath().path].map { $0.precomposedStringWithCanonicalMapping + "/" }
         let me = getpid()
         return await list().filter { process in
             guard process.pid != me, let path = executablePath(of: process.pid) else { return false }
-            return path.precomposedStringWithCanonicalMapping.hasPrefix(prefix)
+            let canonical = path.precomposedStringWithCanonicalMapping
+            return prefixes.contains { canonical.hasPrefix($0) }
         }
     }
 

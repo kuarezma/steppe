@@ -103,6 +103,12 @@ public final class SteppeController: ObservableObject {
 
     // MARK: - Lifecycle
 
+    public func handleDisplayChange() {
+        display = DisplayInfo.primary()
+        guard setupTask == nil, playTask == nil, !isMaintaining else { return }
+        displayModes = nil
+    }
+
     /// Re-reads everything from disk and decides which screen to show.
     public func refresh() async {
         display = DisplayInfo.primary()
@@ -213,8 +219,8 @@ public final class SteppeController: ObservableObject {
             releaseLockIfIdle()
         }
         do {
-            try paths.ensureDirectories()
             try await ensureMacIsReady()
+            try paths.ensureDirectories()
             try await ensureEngine()
             try await ensureFrameworks()
             try await ensurePrefix()
@@ -545,10 +551,12 @@ public final class SteppeController: ObservableObject {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
             }
             phase = .playing(L("Running"))
+            let runStarted = Date()
             while await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
             }
-            await finishSession(resolution: resolution)
+            let runDuration = Date().timeIntervalSince(runStarted)
+            await finishSession(resolution: resolution, runDuration: runDuration)
         } catch {
             Log.shared.error("Play failed: \(error.localizedDescription)")
             await steam.shutdown(environment: environment.setup())
@@ -570,14 +578,26 @@ public final class SteppeController: ObservableObject {
         }
     }
 
-    private func finishSession(resolution: Resolution) async {
+    private func finishSession(resolution: Resolution, runDuration: TimeInterval? = nil) async {
         // A profile created during this session only now has a profile.cfg.
         applyTuning(resolution)
         if settings.quitSteamAfterGame {
             phase = .playing(L("Saving to Steam Cloud"))
             await steam.shutdown(environment: environment.setup())
         }
-        lastSessionNote = nil
+        if let runDuration {
+            let sessionLogURL = paths.logsDir.appendingPathComponent("game-session.log")
+            let logText = (try? Data(contentsOf: sessionLogURL)).flatMap { String(data: $0, encoding: .isoLatin1) } ?? ""
+            let outcome = LaunchOutcome.classify(duration: runDuration, logTail: String(logText.suffix(16_384)), resolution: resolution)
+            if let note = outcome.userNote {
+                Log.shared.warn("Early game exit (\(Int(runDuration))s): \(outcome)")
+                lastSessionNote = note
+            } else {
+                lastSessionNote = nil
+            }
+        } else {
+            lastSessionNote = nil
+        }
         phase = .ready
     }
 

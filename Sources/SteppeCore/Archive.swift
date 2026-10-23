@@ -7,5 +7,6 @@ public enum Archive {
         var args = ["-xJf", archive.path, "-C", directory.path]
         args.append(contentsOf: members)
         try await ProcessRunner.runChecked(URL(fileURLWithPath: "/usr/bin/tar"), arguments: args, timeout: 900)
+        _ = try? await ProcessRunner.run(URL(fileURLWithPath: "/usr/bin/xattr"), arguments: ["-dr", "com.apple.quarantine", directory.path], timeout: 30)
     }
 }

@@ -103,15 +103,21 @@ public enum WinePatcher {
         guard (try? Data(audioAndRuntimeEntitlementsXML.utf8).write(to: entFile, options: .atomic)) != nil else { return }
 
         for binary in existing {
+            if binary.lastPathComponent.hasSuffix(".so") {
+                // Plugins are signed without entitlements, so only skip when an ad-hoc signature already validates.
+                if let verify = try? await ProcessRunner.run(codesign, arguments: ["--verify", "--strict", binary.path], timeout: 15), verify.exitCode == 0,
+                   let info = try? await ProcessRunner.run(codesign, arguments: ["-dv", binary.path], timeout: 15),
+                   (info.stdout + info.stderr).contains("Signature=adhoc") {
+                    continue
+                }
+                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", binary.path], timeout: 30)
+                continue
+            }
             if let inspect = try? await ProcessRunner.run(codesign, arguments: ["-d", "--entitlements", "-", binary.path], timeout: 15),
                (inspect.stdout + inspect.stderr).contains("com.apple.security.device.audio-input") {
                 continue
             }
-            if binary.lastPathComponent.hasSuffix(".so") {
-                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", binary.path], timeout: 30)
-            } else {
-                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", "--entitlements", entFile.path, binary.path], timeout: 30)
-            }
+            _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", "--entitlements", entFile.path, binary.path], timeout: 30)
         }
     }
 

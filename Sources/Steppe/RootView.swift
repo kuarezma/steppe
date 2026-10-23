@@ -1,3 +1,5 @@
+import AppKit
+import Combine
 import SteppeCore
 import SwiftUI
 
@@ -17,6 +19,12 @@ struct RootView: View {
         .task { await controller.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await controller.refresh() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
+            controller.handleDisplayChange()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            controller.handleDisplayChange()
         }
     }
 

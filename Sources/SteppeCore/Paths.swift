@@ -48,8 +48,12 @@ public struct SteppePaths: Sendable {
     public var windowsUserDir: URL? {
         let users = driveC.appendingPathComponent("users", isDirectory: true)
         guard let entries = try? FileManager.default.contentsOfDirectory(atPath: users.path) else { return nil }
-        let candidates = entries.filter { $0 != "Public" && !$0.hasPrefix(".") }.sorted()
-        return candidates.first.map { users.appendingPathComponent($0, isDirectory: true) }
+        let pseudoUsers: Set<String> = ["public", "default", "default user", "all users"]
+        let candidates = entries
+            .filter { !pseudoUsers.contains($0.lowercased()) && !$0.hasPrefix(".") }
+            .sorted()
+        let preferred = candidates.first { $0.lowercased() == "steppe" } ?? candidates.first
+        return preferred.map { users.appendingPathComponent($0, isDirectory: true) }
     }
 
     /// Where the game stores profiles (`profile.cfg` lives inside each profile).

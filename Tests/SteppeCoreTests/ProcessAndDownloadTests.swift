@@ -76,6 +76,20 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertTrue(miss.isEmpty)
     }
 
+    func testFindsProcessesThroughSymlinkedBundle() async throws {
+        let fm = FileManager.default
+        let link = fm.temporaryDirectory.appendingPathComponent("steppe-link-\(UUID().uuidString)")
+        try fm.createSymbolicLink(at: link, withDestinationURL: URL(fileURLWithPath: "/bin"))
+        defer { try? fm.removeItem(at: link) }
+        let sleeper = Process()
+        sleeper.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        sleeper.arguments = ["20"]
+        try sleeper.run()
+        defer { sleeper.terminate() }
+        let hit = await ProcessScanner.processes(inEngine: link)
+        XCTAssertTrue(hit.contains { $0.pid == sleeper.processIdentifier })
+    }
+
     func testLaunchFailureIsReported() async {
         do {
             _ = try await ProcessRunner.run(URL(fileURLWithPath: "/nonexistent/binary"))
@@ -93,6 +107,7 @@ final class StubServer: URLProtocol {
     nonisolated(unsafe) static var ignoreRange = false
     nonisolated(unsafe) static var cutAfter: Int? = nil
     nonisolated(unsafe) static var requestedRanges: [String?] = []
+    nonisolated(unsafe) static var corruptNextResponse = false
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -116,6 +131,10 @@ final class StubServer: URLProtocol {
             headers["Content-Length"] = "\(Self.payload.count - start)"
         }
         var body = Self.payload.subdata(in: start..<Self.payload.count)
+        if Self.corruptNextResponse, start == 0 {
+            Self.corruptNextResponse = false
+            body[0] ^= 0xFF
+        }
         if let cut = Self.cutAfter, status == 200 || start == 0 {
             Self.cutAfter = nil
             let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
@@ -151,6 +170,7 @@ final class DownloaderTests: XCTestCase {
         StubServer.ignoreRange = false
         StubServer.cutAfter = nil
         StubServer.requestedRanges = []
+        StubServer.corruptNextResponse = false
     }
 
     override func tearDown() { try? FileManager.default.removeItem(at: dir) }
@@ -204,6 +224,14 @@ final class DownloaderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("out.bin").path))
     }
 
+    func testRetriesWhenFirstAttemptIsCorrupted() async throws {
+        StubServer.corruptNextResponse = true
+        let dest = try await fetch()
+        XCTAssertEqual(try Data(contentsOf: dest), StubServer.payload)
+        XCTAssertEqual(StubServer.requestedRanges.count, 2)
+        XCTAssertFalse(StubServer.corruptNextResponse)
+    }
+
     func testRejectsWrongSize() async {
         do {
             _ = try await fetch(size: 5)
@@ -243,6 +271,11 @@ final class SystemInfoTests: XCTestCase {
         let tmp = FileManager.default.temporaryDirectory
         XCTAssertGreaterThan(SystemInfo.freeBytes(at: tmp), 0)
         XCTAssertGreaterThan(SystemInfo.freeBytes(at: tmp.appendingPathComponent("does/not/exist/yet")), 0)
+    }
+
+    func testFreeBytesIsZeroForUnmountedVolume() {
+        let missing = URL(fileURLWithPath: "/Volumes/NonExistentSteppeDisk-\(UUID().uuidString)/Steppe")
+        XCTAssertEqual(SystemInfo.freeBytes(at: missing), 0)
     }
 
     func testFreeBytesWorksOnExternalVolumeWhenMounted() throws {

@@ -1,0 +1,23 @@
+name: Feature request or game proposal
+description: Suggest an improvement or propose support for another classic strategy game
+labels: [enhancement]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What feature or game support are you proposing?
+    validations: { required: true }
+  - type: input
+    id: game_or_area
+    attributes:
+      label: Game or area
+      description: The game or component this proposal relates to
+      placeholder: "Cossacks 3 / American Conquest / Steppe launcher"
+    validations: { required: false }
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Any additional context, motivation, or design ideas
+    validations: { required: false }

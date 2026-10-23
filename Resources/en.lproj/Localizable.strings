@@ -29,6 +29,8 @@
 "Click Install in the Steam window" = "Click Install in the Steam window";
 "Click Install in the Steam window. Steam then downloads the game here. This can take a while." = "Click Install in the Steam window. Steam then downloads the game here. This can take a while.";
 "Copy Diagnostics" = "Copy Diagnostics";
+"Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics.";
+"Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair.";
 "Cossacks 3 did not start. Check the Steam window for a prompt and try again." = "Cossacks 3 did not start. Check the Steam window for a prompt and try again.";
 "Cossacks 3 is running. Steppe tidies up when you quit the game." = "Cossacks 3 is running. Steppe tidies up when you quit the game.";
 "Cossacks 3 is still running" = "Cossacks 3 is still running";

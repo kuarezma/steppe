@@ -9,7 +9,7 @@ Steppe.app (SwiftUI)                steppe-cli (developer tool)
                  SteppeController  ← state machine for setup, play, repair
                  RuntimeManifest   ← pinned engine/library URLs + SHA-256 + patch table
                  Downloader / Archive / WinePatcher / PrefixBuilder / SteamKit
-                 GameBootstrap / ProfileTuner / ResolutionPlanner / GameFiles
+                 GameBootstrap / ProfileTuner / ResolutionPlanner / LaunchOutcome / GameFiles
                  ProcessRunner / ProcessScanner / Diagnostics / Redaction
 Native/
    glfix/          x86_64 dylib injected into Wine (OpenGL fixes)
@@ -45,12 +45,28 @@ Every stage checks disk state first, so setup is resumable and idempotent. Marke
 
 1. Stop Steam/Wine of this engine if running (so graphics fixes get injected into Steam and the game).
 2. Re-apply prefix isolation.
-3. Run `list-modes.exe` inside the prefix, plan the render resolution for the monitor Windows reports as primary (`ResolutionPlanner`), snap it to a mode Windows lists (`DisplayModes`) and write it into every existing `profile.cfg` (`ProfileTuner`, backup `profile.cfg.steppe-orig`). Without the helper, the Mac's menu-bar display is used unchecked.
+3. Run `list-modes.exe` inside the prefix, plan the render resolution for the monitor Windows reports as primary (`ResolutionPlanner`), snap it to a mode Windows lists (`DisplayModes.snap`, with aspect-ratio ultrawide fallback) and write it into every existing `profile.cfg` (`ProfileTuner` using lossless ISO-Latin-1 round-trip, backup `profile.cfg.steppe-orig`). Without the helper, the Mac's menu-bar display is used unchecked.
 4. `GameBootstrap` creates first-run files if they are missing (see below).
 5. `GameFiles` replaces `ogg.dll`/`vorbis.dll`/`vorbisfile.dll` only if they are still the verified originals (backup `*.steppe-orig`).
 6. Start `Steam.exe -applaunch 333420` with `DYLD_INSERT_LIBRARIES=libglfix.dylib`, `GLFIX_REMAP=2`, `WINEESYNC=0`.
 7. Start `dismiss-dialog.exe` inside the prefix (presses OK on the game's informational startup box).
-8. Watch for `cossacks.exe`; when it exits, re-apply tuning (a profile created in-game now has a `profile.cfg`), quit Steam gracefully (Cloud sync) and make sure no Wine process is left.
+8. Watch for `cossacks.exe`; when it exits, `LaunchOutcome` classifies the session duration and log tail for early crashes or access violation signatures (`00427A2B`), re-applies tuning, quits Steam gracefully (Cloud sync) and makes sure no Wine process is left.
+
+## Core Reliability Subsystems
+
+### Mode Snapping & Ultrawide Fallback (`DisplayModes.snap`)
+Cossacks 3 requires screen resolutions that Windows can enumerate via `EnumDisplaySettings`. `DisplayModes.snap` takes the target resolution calculated for the user's selected preset and snaps it to the largest valid mode matching the monitor's aspect ratio within the planned pixel budget. If no smaller same-aspect mode fits the budget:
+- When smaller modes of the monitor's aspect ratio exist (or the planned budget is not smaller than `current`), it chooses the smallest same-aspect mode.
+- On displays where no smaller modes of the monitor's own aspect ratio exist and the user selected a lower preset than `current` (such as a 21:9 or 32:9 ultrawide whose lower modes are 16:9/16:10), it falls back to the largest enumerable mode within the planned pixel budget (preferring the closest aspect ratio on ties), or the smallest enumerable mode if none fits.
+
+### Lossless Delphi Profile Encoding (`ProfileTuner.swift`)
+Cossacks 3 stores user preferences in 32-bit Delphi ANSI format (`profile.cfg`). Standard UTF-8 decoding can corrupt or strip non-ASCII characters found in Turkish, Cyrillic, or Eastern European player names. `ProfileTuner` reads and writes `profile.cfg` using byte-preserving `ISO-Latin-1` (`.isoLatin1`), altering only the ASCII digits of the resolution parameters while keeping all multi-byte player names and game settings intact.
+
+### Early-Crash Classification (`LaunchOutcome.swift`)
+When the game exits, `SteppeController` passes runtime duration and log output to `LaunchOutcome.classify()`. Sessions ending under 15 seconds are inspected for fatal signatures (including `00427a2b`, `access violation`, and `unhandled page fault`). Instead of returning silently to a ready state, Steppe recognizes the failure and presents tailored recovery suggestions.
+
+### Reference-Counted PBuffer Table Reclamation (`Native/glfix/pbemu.c`)
+Because modern macOS lacks native CGL PBuffer support, `glfix` emulates PBuffers using per-context Framebuffer Objects (FBOs). Allocated PBuffers are registered in a global table (`g_pbs`). `pbemu.c` maintains reference counts (`refs`) and context associations (`Assoc`). When a PBuffer's reference count reaches zero and no context bindings remain, `gc_pb_locked()` reclaims the slot and compacts the table, preventing resource exhaustion (`MAXPB = 4096`) during extended gameplay.
 
 ## Process identification
 

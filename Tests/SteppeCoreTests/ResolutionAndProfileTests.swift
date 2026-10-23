@@ -85,6 +85,37 @@ final class DisplayModesTests: XCTestCase {
         XCTAssertEqual(modes.all, [Resolution(width: 1280, height: 800)], "the current mode is always a valid mode")
     }
 
+    func testParsesTabsAndMultipleSpaces() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse("\tcurrent\t1920   1080 \n mode  1280\t720\nmode\t1600  900\n"))
+        XCTAssertEqual(modes.current, Resolution(width: 1920, height: 1080))
+        XCTAssertEqual(modes.all, [Resolution(width: 1920, height: 1080),
+                                   Resolution(width: 1280, height: 720), Resolution(width: 1600, height: 900)])
+    }
+
+    func testUltrawideFallsBackToFittingModesForLowerPresets() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse("""
+        current 3440 1440
+        mode 2560 1440
+        mode 1920 1080
+        mode 1600 900
+        mode 1280 720
+        """))
+        for preset in [PerformancePreset.performance, .balanced] {
+            let planned = ResolutionPlanner.plan(display: modes.current, preset: preset)
+            let snapped = modes.snap(planned)
+            XCTAssertLessThanOrEqual(snapped.pixels, preset.pixelBudget ?? modes.current.pixels)
+            XCTAssertEqual(Double(snapped.width) / Double(snapped.height), 16.0 / 9.0, accuracy: 0.001)
+            XCTAssertEqual(snapped, preset == .performance
+                           ? Resolution(width: 1280, height: 720) : Resolution(width: 1600, height: 900))
+        }
+        XCTAssertEqual(modes.snap(ResolutionPlanner.plan(display: modes.current, preset: .native)), modes.current)
+    }
+
+    func testSnapPreservesShapeFallbackWhenSmallerModesOfThatShapeExist() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        XCTAssertEqual(modes.snap(Resolution(width: 850, height: 600)), Resolution(width: 960, height: 540))
+    }
+
     func testSnapKeepsAnEnumeratedMode() throws {
         let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
         XCTAssertEqual(modes.snap(Resolution(width: 1600, height: 900)), Resolution(width: 1600, height: 900))
@@ -153,6 +184,41 @@ final class ProfileConfigTests: XCTestCase {
             updated.replacingOccurrences(of: "1838", with: "2560").replacingOccurrences(of: "1034", with: "1440"),
             Self.sample
         )
+    }
+
+    func testReplacesResolutionWhenHeightPrecedesWidth() throws {
+        let original = "ScreenResolution : struct.begin\r\n Height = 720\r\n Width = 1280\r\n Frequency = 0\r\nstruct.end\r\n"
+        let updated = try XCTUnwrap(ProfileConfig.settingScreenResolution(Resolution(width: 800, height: 1024), in: original))
+        XCTAssertEqual(updated, "ScreenResolution : struct.begin\r\n Height = 1024\r\n Width = 800\r\n Frequency = 0\r\nstruct.end\r\n")
+        XCTAssertEqual(ProfileConfig.screenResolution(in: updated), Resolution(width: 800, height: 1024))
+    }
+
+    func testTunerPreservesRawNonUTF8ProfileBytes() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("steppe-ansi-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let profile = dir.appendingPathComponent("Cyrillic")
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        let cfg = profile.appendingPathComponent("profile.cfg")
+        var prefix = Data("// Player = ".utf8)
+        prefix.append(contentsOf: [0xC0, 0xEB, 0xE5, 0xEA, 0xF1])
+        prefix.append(contentsOf: "\r\n".utf8)
+        var suffix = Data("\r\n// Other = ".utf8)
+        suffix.append(contentsOf: [0xFF, 0x80, 0xFE])
+        suffix.append(contentsOf: "\r\n".utf8)
+        let original = prefix + Data(Self.sample.utf8) + suffix
+        XCTAssertNil(String(data: original, encoding: .utf8))
+        try original.write(to: cfg)
+
+        let outcome = try ProfileTuner.apply(resolution: Resolution(width: 1280, height: 720), profilesDir: dir)
+        XCTAssertEqual(outcome.updated, ["Cyrillic"])
+        XCTAssertTrue(outcome.skipped.isEmpty)
+        let expectedText = Self.sample.replacingOccurrences(of: "Width = 2560", with: "Width = 1280")
+            .replacingOccurrences(of: "Height = 1440", with: "Height = 720")
+        let updated = try Data(contentsOf: cfg)
+        XCTAssertEqual(updated, prefix + Data(expectedText.utf8) + suffix)
+        XCTAssertEqual(ProfileConfig.screenResolution(in: try XCTUnwrap(String(data: updated, encoding: .isoLatin1))),
+                       Resolution(width: 1280, height: 720))
+        XCTAssertEqual(try Data(contentsOf: cfg.appendingPathExtension("steppe-orig")), original)
     }
 
     func testPreservesWindowsLineEndings() throws {

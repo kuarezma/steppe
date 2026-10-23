@@ -77,6 +77,29 @@ final class GameFilesTests: XCTestCase {
         XCTAssertTrue(results.allSatisfy { if case .skippedUnknownFile = $0 { return true } else { return false } })
         XCTAssertEqual(try String(contentsOf: game.appendingPathComponent("ogg.dll")), "newer game build")
     }
+
+    func testReplaceFileRollbackPreservesTargetOnFailure() throws {
+        let (src, game, cleanup) = try makeDirs()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: src.path)
+            cleanup()
+        }
+        let target = game.appendingPathComponent("ogg.dll")
+        try Data("original-bytes".utf8).write(to: target)
+
+        // Case 1: missing source is rejected before moving target.
+        let missingSource = src.appendingPathComponent("missing.dll")
+        XCTAssertThrowsError(try GameFiles.replaceFile(at: target, with: missingSource))
+        XCTAssertEqual(try String(contentsOf: target), "original-bytes", "target must survive missing-source failure")
+
+        // Case 2: source exists, but src directory is read-only (0o555), so moving source out of src fails
+        // with EACCES after target is moved to rollback, exercising the rollback restoration path.
+        let lockedSource = src.appendingPathComponent("locked.dll")
+        try Data("new-bytes".utf8).write(to: lockedSource)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: src.path)
+        XCTAssertThrowsError(try GameFiles.replaceFile(at: target, with: lockedSource))
+        XCTAssertEqual(try String(contentsOf: target), "original-bytes", "rollback must restore target after move failure")
+    }
 }
 
 final class PrefixIsolationTests: XCTestCase {
@@ -259,7 +282,52 @@ final class InstallLockTests: XCTestCase {
     }
 }
 
+final class WindowsUserDirTests: XCTestCase {
+    private func makePaths(users: [String]) throws -> (SteppePaths, URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("steppe-users-\(UUID().uuidString)")
+        let paths = SteppePaths(root: root)
+        for user in users {
+            try FileManager.default.createDirectory(
+                at: paths.driveC.appendingPathComponent("users/\(user)"), withIntermediateDirectories: true)
+        }
+        return (paths, root)
+    }
+
+    func testPrefersSteppeOverPseudoUsers() throws {
+        let (paths, root) = try makePaths(users: ["All Users", "Default", "Public", "steppe"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertEqual(paths.windowsUserDir?.lastPathComponent, "steppe")
+    }
+
+    func testReturnsNilWhenOnlyPseudoUsersExist() throws {
+        let (paths, root) = try makePaths(users: ["Public", "Default"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        XCTAssertNil(paths.windowsUserDir)
+    }
+}
+
 final class MicrophoneAndEntitlementsTests: XCTestCase {
+    func testAudioEntitlementsDoNotResignUnchangedPlugin() async throws {
+        let fm = FileManager.default
+        let engineRoot = fm.temporaryDirectory.appendingPathComponent("steppe-engine-so-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: engineRoot) }
+        let binDir = engineRoot.appendingPathComponent("bin")
+        let soDir = engineRoot.appendingPathComponent("lib/wine/x86_64-unix")
+        try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: soDir, withIntermediateDirectories: true)
+        try fm.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: binDir.appendingPathComponent("wine"))
+        let plugin = soDir.appendingPathComponent("winecoreaudio.so")
+        try fm.copyItem(at: URL(fileURLWithPath: "/usr/bin/false"), to: plugin)
+
+        await WinePatcher.ensureAudioEntitlements(engineRoot: engineRoot)
+        let first = try fm.attributesOfItem(atPath: plugin.path)
+        await WinePatcher.ensureAudioEntitlements(engineRoot: engineRoot)
+        let second = try fm.attributesOfItem(atPath: plugin.path)
+
+        XCTAssertEqual(first[.modificationDate] as? Date, second[.modificationDate] as? Date)
+        XCTAssertEqual(first[.systemFileNumber] as? UInt64, second[.systemFileNumber] as? UInt64)
+    }
+
     func testMicrophonePermissionStatusAndLabels() {
         let status = MicrophonePermission.status()
         XCTAssertFalse(status.localizedLabel.isEmpty)

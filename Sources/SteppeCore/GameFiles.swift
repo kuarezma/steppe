@@ -63,7 +63,7 @@ public enum GameFiles {
                 let staged = target.appendingPathExtension("steppe-new")
                 try? fm.removeItem(at: staged)
                 try fm.copyItem(at: source, to: staged)
-                _ = try fm.replaceItemAt(target, withItemAt: staged)
+                try replaceFile(at: target, with: staged)
                 record[name] = ours
                 results.append(.installed(name))
             } catch {
@@ -84,9 +84,32 @@ public enum GameFiles {
             let target = gameDir.appendingPathComponent(name)
             let backup = target.appendingPathExtension("steppe-orig")
             guard fm.fileExists(atPath: backup.path) else { continue }
-            if (try? fm.replaceItemAt(target, withItemAt: backup)) != nil { restored += 1 }
+            if (try? replaceFile(at: target, with: backup)) != nil { restored += 1 }
         }
         return restored
+    }
+
+    /// Atomic replace where the volume supports it; exFAT and similar volumes can reject it (ENOTSUP),
+    /// so fall back to a rollback-safe move that preserves `target` if moving `source` fails.
+    static func replaceFile(at target: URL, with source: URL) throws {
+        let fm = FileManager.default
+        do {
+            _ = try fm.replaceItemAt(target, withItemAt: source)
+        } catch {
+            guard fm.fileExists(atPath: source.path) else { throw error }
+            let rollback = target.appendingPathExtension("steppe-rollback-\(UUID().uuidString)")
+            let hadTarget = fm.fileExists(atPath: target.path)
+            if hadTarget { try fm.moveItem(at: target, to: rollback) }
+            do {
+                try fm.moveItem(at: source, to: target)
+                if hadTarget { try? fm.removeItem(at: rollback) }
+            } catch let moveError {
+                if hadTarget, !fm.fileExists(atPath: target.path) {
+                    try? fm.moveItem(at: rollback, to: target)
+                }
+                throw moveError
+            }
+        }
     }
 }
 

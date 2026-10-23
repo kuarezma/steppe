@@ -51,6 +51,18 @@ public enum Downloader {
             attempt += 1
             do {
                 try await fetch(url: url, part: part, expectedSize: expectedSize, configuration: configuration, progress: progress)
+                let size = (try? fm.attributesOfItem(atPath: part.path)[.size] as? Int64) ?? 0
+                if let expectedSize, size != expectedSize {
+                    try? fm.removeItem(at: part)
+                    throw DownloadError.sizeMismatch(expected: expectedSize, actual: size)
+                }
+                if let expectedSHA256 {
+                    let actual = try Hashing.sha256(of: part)
+                    guard actual == expectedSHA256 else {
+                        try? fm.removeItem(at: part)
+                        throw DownloadError.checksumMismatch(expected: expectedSHA256, actual: actual)
+                    }
+                }
                 break
             } catch is CancellationError {
                 throw CancellationError()
@@ -60,23 +72,14 @@ public enum Downloader {
                 if attempt >= maxAttempts { throw error }
             } catch {
                 if (error as? URLError)?.code == .cancelled { throw CancellationError() }
-                if attempt >= maxAttempts { throw DownloadError.network(error.localizedDescription) }
+                let nsError = error as NSError
+                let outOfSpace = (nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteOutOfSpaceError)
+                    || (nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(POSIXErrorCode.ENOSPC.rawValue))
+                if outOfSpace || attempt >= maxAttempts { throw DownloadError.network(error.localizedDescription) }
             }
             try await Task.sleep(nanoseconds: UInt64(min(30, 1 << attempt)) * retryDelayUnit)
         }
 
-        let size = (try? fm.attributesOfItem(atPath: part.path)[.size] as? Int64) ?? 0
-        if let expectedSize, size != expectedSize {
-            try? fm.removeItem(at: part)
-            throw DownloadError.sizeMismatch(expected: expectedSize, actual: size)
-        }
-        if let expectedSHA256 {
-            let actual = try Hashing.sha256(of: part)
-            guard actual == expectedSHA256 else {
-                try? fm.removeItem(at: part)
-                throw DownloadError.checksumMismatch(expected: expectedSHA256, actual: actual)
-            }
-        }
         try fm.moveItem(at: part, to: destination)
     }
 

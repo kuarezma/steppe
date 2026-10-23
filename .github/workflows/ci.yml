@@ -36,6 +36,12 @@ jobs:
       - name: glfix tests (GL-less runners skip the GL cases)
         run: make -C Native/glfix test
 
+      - name: vorbis-fast tests
+        run: make -C Native/vorbis-fast test
+
+      - name: dialog-helper tests
+        run: make -C Native/dialog-helper test
+
       - name: Build the app bundle
         run: Scripts/build-app.sh
         env:

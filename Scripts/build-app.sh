@@ -88,6 +88,7 @@ FW="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 for nested in "$FW/XPCServices/Installer.xpc" "$FW/XPCServices/Downloader.xpc" "$FW/Updater.app" "$FW/Autoupdate"; do
     [ -e "$nested" ] && "${SIGN[@]}" "$nested"
 done
+"${SIGN[@]}" "$APP/Contents/Resources/Native/libglfix.dylib"
 "${SIGN[@]}" "$APP/Contents/Frameworks/Sparkle.framework"
 "${APP_SIGN[@]}" "$APP"
 codesign --verify --deep --strict "$APP"

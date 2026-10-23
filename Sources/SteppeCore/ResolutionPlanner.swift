@@ -74,7 +74,7 @@ public struct DisplayModes: Equatable, Sendable {
         var current: Resolution?
         var all: [Resolution] = []
         for line in output.split(whereSeparator: \.isNewline) {
-            let fields = line.split(separator: " ")
+            let fields = line.split(whereSeparator: \.isWhitespace)
             guard fields.count == 3, let w = Int(fields[1]), let h = Int(fields[2]), w > 0, h > 0 else { continue }
             let mode = Resolution(width: w, height: h)
             switch fields[0] {
@@ -89,13 +89,22 @@ public struct DisplayModes: Equatable, Sendable {
     }
 
     /// `planned` if Windows can enumerate it; otherwise the largest mode of the monitor's shape that is
-    /// no bigger, or the smallest mode of that shape when none fits.
+    /// no bigger, or the smallest mode of that shape when none fits. Displays without smaller
+    /// modes of their shape can fall back to another shape within the planned pixel budget.
     public func snap(_ planned: Resolution) -> Resolution {
         if all.contains(planned) { return planned }
         let shape = Self.aspect(current)
         let sameShape = all.filter { abs(Self.aspect($0) - shape) <= shape * 0.03 }
         let fitting = sameShape.filter { $0.pixels <= planned.pixels }
-        return fitting.max { $0.pixels < $1.pixels } ?? sameShape.min { $0.pixels < $1.pixels } ?? current
+        if let match = fitting.max(by: { $0.pixels < $1.pixels }) { return match }
+        if sameShape.filter({ $0.pixels < current.pixels }).isEmpty, planned.pixels < current.pixels {
+            let allFitting = all.filter { $0.pixels <= planned.pixels }
+            if let match = allFitting.max(by: { a, b in
+                a.pixels != b.pixels ? a.pixels < b.pixels : abs(Self.aspect(a) - shape) > abs(Self.aspect(b) - shape)
+            }) { return match }
+            return all.min { $0.pixels < $1.pixels } ?? current
+        }
+        return sameShape.min { $0.pixels < $1.pixels } ?? all.min { $0.pixels < $1.pixels } ?? current
     }
 
     private static func aspect(_ r: Resolution) -> Double { Double(r.width) / Double(r.height) }

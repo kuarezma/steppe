@@ -12,7 +12,9 @@ Starting with *Cossacks 3*.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/macOS-14.6%2B%20·%20Apple%20silicon-lightgrey)
 
-[Türkçe](README.tr.md) · [Download](https://github.com/kuarezma/steppe/releases/latest) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [How it works](docs/ARCHITECTURE.md)
+**English** · [Türkçe](README.tr.md)
+
+[Download](https://github.com/kuarezma/steppe/releases/latest) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [How it works](docs/ARCHITECTURE.md)
 
 </div>
 
@@ -85,18 +87,30 @@ Not verified. Steppe ships one optional speed‑up that changes the game's geome
 - Steppe has no analytics, no accounts and no telemetry. Its only network traffic is: GitHub (engine, libraries, updates), Valve's CDN (Steam installer) and Steam itself.
 - Your Steam credentials go only to Steam's own window, inside the Windows environment.
 - The Windows environment cannot see your Mac's files (no `Z:` drive, user folders are real folders inside the environment).
+- **Microphone permission handling**: Steppe requests macOS Microphone access cleanly only when needed for Steam/voice chat, signs Wine's CoreAudio stack with explicit audio-input entitlements, and provides a one-click TCC permission reset in *Settings → Game*.
 - *Settings → Export Diagnostics* produces a text report with your name, home folder, Steam IDs, e‑mail addresses and IPs removed.
 - Downloads are checked against pinned SHA‑256 hashes before use; the patched engine file is verified byte for byte.
 - The repository contains no game files and no copy of Wine; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## How it works (short)
+## Self-Healing & Proactive Diagnostics
 
-Steppe is a SwiftUI app around a small, tested Swift core. It runs the Windows game with the official Sikarugir **Wine 10** engine under Rosetta and adds four small pieces that make it behave on modern macOS:
+Steppe is engineered to run reliably without manual tinkering or command-line troubleshooting:
+- **Resumable & Verified Downloads:** Downloads use HTTP range requests with automatic retry on network drops and pinned SHA-256 verification; corrupted archives are automatically purged and re-downloaded.
+- **Screen & Wake Detection:** Watches for display topology changes, clamshell transitions, and system wake events, refreshing the primary display info and clearing cached Windows display modes so the next launch re-queries `list-modes.exe` for the active monitor.
+- **Early-Crash Detection:** Monitors game process lifetime and log output; if the game exits within 15 seconds, Steppe checks for crash signatures (`00427a2b`, `access violation`, `unhandled page fault`, `unhandled exception`) to recommend the **Balanced** preset or **Settings → Repair…**, or advises exporting diagnostics on a generic early exit.
+- **One-Click Maintenance & Repair:** *Settings → Maintenance → Repair…* restores original audio DLLs, clears engine and framework markers so the setup pipeline re-verifies and repairs the Wine engine and prefix, and resets the TCC microphone record.
+- **Privacy-Preserving Diagnostics:** *Settings → Export Diagnostics* exports an actionable report with your Mac username, home folder path, SteamID64, e-mail addresses, IPv4 addresses, and `token`/`password`/`secret` values stripped out.
 
-1. **Four documented byte patches to Wine's macOS driver** (pbuffers no longer work on current macOS; a double free; a pixel‑format query). Applied after download, verified by hash, re‑signed ad hoc. [Details](docs/ENGINE_PATCHES.md).
-2. **`glfix`**: a tiny library injected into Wine that fixes shader versions, emulates pbuffers with framebuffer objects and repairs a few GL calls. [`Native/glfix`](Native/glfix)
-3. **`vorbis-fast`**: audio libraries built from Xiph's sources that cache decoded sound effects and remove a startup stall. [`Native/vorbis-fast`](Native/vorbis-fast)
-4. **A helper that runs inside the Windows environment** to press OK on an informational startup box, and **first‑run files** so the game does not crash on a fresh install. [`Native/dialog-helper`](Native/dialog-helper), [`GameBootstrap`](Sources/SteppeCore/GameBootstrap.swift)
+## What Steppe fixes
+
+Steppe is a SwiftUI app around a small, tested Swift core. It runs the Windows game with the official Sikarugir **Wine 10** engine under Rosetta and adds custom native components that make it behave smoothly on modern macOS:
+
+| Component | What Steppe fixes |
+| --- | --- |
+| **Wine macOS driver patches** ([`docs/ENGINE_PATCHES.md`](docs/ENGINE_PATCHES.md)) | Fixes broken pbuffers on current macOS, a double-free on shutdown, and pixel-format queries. Applied after download, verified by SHA-256 hash, re-signed ad hoc. |
+| **`glfix`** ([`Native/glfix`](Native/glfix)) | A tiny library injected into Wine that fixes shader versions, emulates pbuffers with framebuffer objects (FBOs), and repairs legacy OpenGL calls. |
+| **`vorbis-fast`** ([`Native/vorbis-fast`](Native/vorbis-fast)) | Audio libraries built from Xiph's sources that cache decoded sound effects and eliminate startup stalls. |
+| **`Native/dialog-helper` & first-run bootstrap** ([`GameBootstrap`](Sources/SteppeCore/GameBootstrap.swift)) | **First-run crash and dialog**: includes both `dismiss-dialog.exe` (auto-dismissing the startup hardware-acceleration box) and `list-modes.exe` (querying Windows `EnumDisplaySettings` so multi-monitor, external display, and ultrawide setups always write a valid enumerable resolution to `profile.cfg`, while preserving non-UTF-8/ANSI profile encodings), plus first-run bootstrap files that prevent the fresh-install `00427A2B` crash. |
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
 

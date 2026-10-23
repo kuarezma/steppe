@@ -29,6 +29,8 @@
 "Click Install in the Steam window" = "Steam penceresinde Yükle'ye tıklayın";
 "Click Install in the Steam window. Steam then downloads the game here. This can take a while." = "Steam penceresinde Yükle'ye tıklayın. Steam oyunu buraya indirir. Bu biraz sürebilir.";
 "Copy Diagnostics" = "Tanılamayı Kopyala";
+"Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "Cossacks 3 başladıktan hemen sonra kapandı. Bu durum sürerse Ayarlar → Tanılamayı Dışa Aktar'ı kullanın.";
+"Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "Cossacks 3, %@ çözünürlükte beklenmedik biçimde kapandı. Başka bir çözünürlük ön ayarı veya Ayarlar → Onar'ı deneyin.";
 "Cossacks 3 did not start. Check the Steam window for a prompt and try again." = "Cossacks 3 başlamadı. Steam penceresinde bir istek olup olmadığına bakın ve tekrar deneyin.";
 "Cossacks 3 is running. Steppe tidies up when you quit the game." = "Cossacks 3 çalışıyor. Oyundan çıkınca Steppe ortalığı toplar.";
 "Cossacks 3 is still running" = "Cossacks 3 hâlâ çalışıyor";

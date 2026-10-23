@@ -7,9 +7,11 @@ Thank you for helping! Bug reports, compatibility reports, translations, tests, 
 ```bash
 git clone https://github.com/kuarezma/steppe && cd steppe
 brew install mingw-w64                     # for the Windows helper DLLs
-swift test                                 # unit tests (44, run in about a second)
+swift test                                 # unit tests (75+, run in about a second)
 python3 Scripts/extract-strings.py --check # every UI string has an English and Turkish entry
 make -C Native/glfix test                  # OpenGL shim tests (needs a normal desktop session)
+make -C Native/vorbis-fast test            # audio cache and startup patch tests
+make -C Native/dialog-helper test          # Windows startup and display mode helper tests
 Scripts/build-app.sh                       # builds dist/Steppe.app, ad hoc signed
 ```
 

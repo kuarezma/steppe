@@ -20,10 +20,17 @@ body:
       label: Mac and macOS version
       placeholder: "MacBook Pro 14-inch 2023, M3 Pro, macOS 15.2"
     validations: { required: true }
+  - type: input
+    id: display
+    attributes:
+      label: Display setup
+      description: "Built-in display or external monitor(s), resolution, refresh rate, and whether the lid is closed (clamshell mode)"
+      placeholder: "Built-in 14-inch + external 1920×1080 @ 60 Hz (primary)"
+    validations: { required: false }
   - type: textarea
     id: diagnostics
     attributes:
       label: Diagnostics
-      description: "Settings → Export Diagnostics, then paste the file here. Personal data is removed automatically; please still skim it."
+      description: "Settings → Export Diagnostics, then paste the file here. If Steppe cannot open, paste ~/Library/Application Support/Steppe/logs/steppe.log instead. Personal data is removed automatically; please still skim it."
       render: text
-    validations: { required: true }
+    validations: { required: false }

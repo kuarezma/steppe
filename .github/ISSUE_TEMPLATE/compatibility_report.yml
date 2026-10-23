@@ -9,6 +9,12 @@ body:
       placeholder: "MacBook Air, M2, 16 GB, macOS 15.2"
     validations: { required: true }
   - type: input
+    id: version
+    attributes:
+      label: Steppe version
+      placeholder: "0.1.5"
+    validations: { required: true }
+  - type: input
     id: display
     attributes:
       label: Display and preset

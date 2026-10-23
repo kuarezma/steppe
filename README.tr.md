@@ -8,7 +8,13 @@
 
 İlk oyun: *Cossacks 3*.
 
-[English](README.md) · [İndir](https://github.com/kuarezma/steppe/releases/latest) · [Sorun giderme](docs/TROUBLESHOOTING.md) · [Nasıl çalışır](docs/ARCHITECTURE.md)
+[![CI](https://github.com/kuarezma/steppe/actions/workflows/ci.yml/badge.svg)](https://github.com/kuarezma/steppe/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/macOS-14.6%2B%20·%20Apple%20silicon-lightgrey)
+
+[English](README.md) · **Türkçe**
+
+[İndir](https://github.com/kuarezma/steppe/releases/latest) · [Sorun giderme](docs/TROUBLESHOOTING.md) · [Nasıl çalışır](docs/ARCHITECTURE.md)
 
 </div>
 
@@ -81,18 +87,30 @@ Doğrulanmadı. Steppe, oyunun geometri matematiğini değiştiren isteğe bağl
 - Steppe'in analitiği, hesabı veya telemetrisi yoktur. Tek ağ trafiği: GitHub (motor, kütüphaneler, güncellemeler), Valve'in CDN'i (Steam kurucusu) ve Steam'in kendisi.
 - Steam kimlik bilgileriniz yalnızca Windows ortamındaki Steam'in kendi penceresine gider.
 - Windows ortamı Mac'inizin dosyalarını göremez (`Z:` sürücüsü yok, kullanıcı klasörleri ortamın içinde gerçek klasörlerdir).
+- **Mikrofon izin yönetimi**: Steppe, macOS Mikrofon erişimini yalnızca Steam ve sesli sohbet için gerektiğinde temiz bir şekilde ister, Wine'ın CoreAudio yığınını açık ses girişi yetkileriyle (entitlements) imzalar ve *Ayarlar → Oyun* altında tek tıkla TCC izin sıfırlama olanağı sunar.
 - *Ayarlar → Tanılamayı Dışa Aktar*, adınız, ev klasörünüz, Steam kimlikleriniz, e‑posta adresleriniz ve IP'ler çıkarılmış bir metin raporu üretir.
 - İndirmeler kullanılmadan önce sabitlenmiş SHA‑256 özetleriyle denetlenir; yamalı motor dosyası bayt bayt doğrulanır.
 - Depoda oyun dosyası ve Wine kopyası yoktur; bkz. [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## Kısaca nasıl çalışır
+## Kendi Kendini Onarma ve Proaktif Tanılama
 
-Steppe, küçük ve test edilmiş bir Swift çekirdeği saran SwiftUI uygulamasıdır. Windows oyununu resmî Sikarugir **Wine 10** motoruyla Rosetta altında çalıştırır ve modern macOS'ta düzgün davranması için dört küçük parça ekler:
+Steppe, komut satırı veya manuel müdahaleye gerek kalmadan kararlı çalışacak şekilde geliştirilmiştir:
+- **Kaldığı Yerden Devam Eden ve Doğrulanmış İndirmeler:** İndirmeler HTTP aralık (range) istekleri ve sabitlenmiş SHA-256 özet doğrulaması kullanır; ağ kopmalarında otomatik yeniden deneme yapılır, bozuk arşivler temizlenip yeniden indirilir.
+- **Ekran ve Uyanma Algılama:** Ekran değişikliklerini, kapak kapatma (clamshell) geçişlerini ve sistem uyanma olaylarını dinamik olarak izler; birincil ekran bilgisini günceller ve önbellekteki Windows ekran modlarını sıfırlayarak bir sonraki başlatmada `list-modes.exe` ile aktif ekranın yeniden sorgulanmasını sağlar.
+- **Erken Çökme Tespiti:** Oyun işlem ömrünü ve günlük çıktılarını izler; oyun 15 saniye içinde kapanırsa çökme imzalarını (`00427a2b`, `access violation`, `unhandled page fault`, `unhandled exception`) denetleyerek **Dengeli** ön ayarı veya **Ayarlar → Onar…** adımını önerir, imza yoksa tanılamayı dışa aktarmanızı tavsiye eder.
+- **Tek Tıkla Bakım ve Onarım:** *Ayarlar → Bakım → Onar…* özgün ses DLL'lerini geri yükler, motor ve kütüphane işaretçilerini temizleyerek kurulum hattının Wine motorunu ve prefix yalıtımını yeniden doğrulamasını sağlar ve TCC mikrofon kaydını sıfırlar.
+- **Gizliliği Koruyan Tanılama:** *Ayarlar → Tanılamayı Dışa Aktar*, Mac kullanıcı adınızı, ev klasörü yolunuzu, SteamID64 kimliklerinizi, e-posta adreslerinizi, IPv4 adreslerinizi ve `token`/`password`/`secret` alanlarını maskeleyerek güvenli bir rapor sunar.
 
-1. **Wine'ın macOS sürücüsüne dört belgelenmiş bayt yaması** (güncel macOS'ta pbuffer çalışmıyor; bir çift serbest bırakma; bir piksel biçimi sorgusu). İndirmeden sonra uygulanır, özetle doğrulanır, ad‑hoc yeniden imzalanır. [Ayrıntı](docs/ENGINE_PATCHES.md).
-2. **`glfix`**: Wine'a enjekte edilen küçük bir kütüphane; shader sürümlerini düzeltir, pbuffer'ları framebuffer nesneleriyle taklit eder, birkaç GL çağrısını onarır. [`Native/glfix`](Native/glfix)
-3. **`vorbis-fast`**: Xiph kaynaklarından derlenen, çözülmüş ses efektlerini önbelleğe alan ve açılıştaki takılmayı gideren ses kütüphaneleri. [`Native/vorbis-fast`](Native/vorbis-fast)
-4. Bilgilendirici bir açılış kutusuna tamam diyen, **Windows ortamının içinde çalışan bir yardımcı** ve oyunun taze kurulumda çökmemesi için **ilk açılış dosyaları**. [`Native/dialog-helper`](Native/dialog-helper), [`GameBootstrap`](Sources/SteppeCore/GameBootstrap.swift)
+## Steppe neyi düzeltiyor
+
+Steppe, küçük ve test edilmiş bir Swift çekirdeği saran SwiftUI uygulamasıdır. Windows oyununu resmî Sikarugir **Wine 10** motoruyla Rosetta altında çalıştırır ve modern macOS'ta sorunsuz davranması için özel yerel bileşenler ekler:
+
+| Bileşen | Steppe neyi düzeltiyor |
+| --- | --- |
+| **Wine macOS sürücü yamaları** ([`docs/ENGINE_PATCHES.md`](docs/ENGINE_PATCHES.md)) | Güncel macOS'ta çalışmayan pbuffer desteğini, kapanıştaki çift serbest bırakmayı (double-free) ve piksel biçimi sorgusunu düzeltir. İndirmeden sonra uygulanır, SHA-256 özetiyle doğrulanır, ad-hoc yeniden imzalanır. |
+| **`glfix`** ([`Native/glfix`](Native/glfix)) | Wine'a enjekte edilen küçük bir kütüphane; gölgelendirici (shader) sürümlerini düzeltir, pbuffer'ları framebuffer nesneleriyle (FBO) taklit eder ve eski GL çağrılarını onarır. |
+| **`vorbis-fast`** ([`Native/vorbis-fast`](Native/vorbis-fast)) | Xiph kaynaklarından derlenen, çözülmüş ses efektlerini önbelleğe alan ve açılıştaki takılmayı gideren ses kütüphaneleri. |
+| **`Native/dialog-helper` ve ilk açılış** ([`GameBootstrap`](Sources/SteppeCore/GameBootstrap.swift)) | **İlk açılış çökmesi ve diyalog kutusu**: açılıştaki donanım ivmelendirme kutusunu otomatik kapatan `dismiss-dialog.exe` ile çoklu monitör, harici ekran ve ultra geniş ekran kurulumlarında UTF-8 dışı/ANSI profil kodlamalarını korurken `profile.cfg` dosyasına her zaman geçerli ve listelenebilir bir çözünürlük yazılması için Windows `EnumDisplaySettings` sorgulayan `list-modes.exe` yardımcılarını ve taze kurulumdaki `00427A2B` çökmesini önleyen ilk çalıştırma dosyalarını içerir. |
 
 Tam resim için [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasına bakın.
 

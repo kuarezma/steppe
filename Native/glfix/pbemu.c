@@ -73,6 +73,18 @@ static Assoc *assoc_for_pb(PBuf *pb) {
   return NULL;
 }
 
+static void gc_pb_locked(PBuf *pb) {
+  if (pb->refs > 0 || assoc_for_pb(pb)) return;
+  for (int i = 0; i < g_npbs; i++) {
+    if (g_pbs[i] != pb) continue;
+    g_pbs[i] = g_pbs[--g_npbs];
+    pb->magic = 0;
+    // Do not glDelete tex/rb: CGLReleasePBuffer can run without the owning sharegroup context current.
+    free(pb);
+    return;
+  }
+}
+
 static void ensure_objects(Assoc *a) {
   if (a->ready) return;
   PBuf *pb = a->pb;
@@ -118,7 +130,12 @@ static CGLError pb_CGLCreatePBuffer(GLsizei w, GLsizei h, GLenum target, GLenum 
   pb->magic = PB_MAGIC; pb->refs = 1; pb->w = w; pb->h = h;
   pb->target = target; pb->ifmt = ifmt; pb->maxlvl = maxlvl;
   pthread_mutex_lock(&g_pmu);
-  if (g_npbs < MAXPB) g_pbs[g_npbs++] = pb;
+  if (g_npbs >= MAXPB) {
+    pthread_mutex_unlock(&g_pmu);
+    free(pb);
+    return kCGLBadAlloc;
+  }
+  g_pbs[g_npbs++] = pb;
   pthread_mutex_unlock(&g_pmu);
   *obj = (CGLPBufferObj)pb;
   glfix_trace("PBEMU create pb=%p %dx%d target=0x%x ifmt=0x%x", (void *)pb, w, h, target, ifmt);
@@ -128,34 +145,48 @@ DYLD_INTERPOSE(pb_CGLCreatePBuffer, CGLCreatePBuffer)
 
 static CGLError pb_CGLDescribePBuffer(CGLPBufferObj obj, GLsizei *w, GLsizei *h, GLenum *target,
                                       GLenum *ifmt, GLint *mipmap) {
-  if (!is_pb(obj)) return kCGLBadValue;
+  pthread_mutex_lock(&g_pmu);
+  if (!is_pb(obj)) { pthread_mutex_unlock(&g_pmu); return kCGLBadValue; }
   PBuf *pb = (PBuf *)obj;
   if (w) *w = pb->w;
   if (h) *h = pb->h;
   if (target) *target = pb->target;
   if (ifmt) *ifmt = pb->ifmt;
   if (mipmap) *mipmap = pb->maxlvl;
+  pthread_mutex_unlock(&g_pmu);
   return kCGLNoError;
 }
 DYLD_INTERPOSE(pb_CGLDescribePBuffer, CGLDescribePBuffer)
 
 static void pb_CGLReleasePBuffer(CGLPBufferObj obj) {
-  if (!is_pb(obj)) { glfix_trace("PBEMU release ignored unknown %p", (void *)obj); return; }
-
-  PBuf *pb = (PBuf *)obj;
   pthread_mutex_lock(&g_pmu);
+  if (!is_pb(obj)) {
+    pthread_mutex_unlock(&g_pmu);
+    glfix_trace("PBEMU release ignored unknown %p", (void *)obj);
+    return;
+  }
+  PBuf *pb = (PBuf *)obj;
   pb->refs--;
+  if (pb->refs <= 0) gc_pb_locked(pb);
   pthread_mutex_unlock(&g_pmu);
 }
 DYLD_INTERPOSE(pb_CGLReleasePBuffer, CGLReleasePBuffer)
 
 static CGLError pb_CGLSetPBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLenum face, GLint level, GLint screen) {
   (void)face; (void)level; (void)screen;
-  if (obj && !is_pb(obj)) return kCGLBadValue;
   pthread_mutex_lock(&g_pmu);
+  if (obj && (!is_pb(obj) || ((PBuf *)obj)->refs <= 0)) {
+    pthread_mutex_unlock(&g_pmu);
+    return kCGLBadValue;
+  }
   Assoc *a = assoc_for_ctx(ctx);
-  if (!obj) { if (a) memset(a, 0, sizeof *a); pthread_mutex_unlock(&g_pmu); return kCGLNoError; }
-  if (a && a->pb != (PBuf *)obj) memset(a, 0, sizeof *a), a = NULL;
+  if (a && a->pb != (PBuf *)obj) {
+    PBuf *old = a->pb;
+    memset(a, 0, sizeof *a);
+    a = NULL;
+    if (old && old->refs <= 0) gc_pb_locked(old);
+  }
+  if (!obj) { pthread_mutex_unlock(&g_pmu); return kCGLNoError; }
   if (!a)
     for (int i = 0; i < MAXASSOC; i++)
       if (!g_assoc[i].ctx) { a = &g_assoc[i]; a->ctx = ctx; a->pb = (PBuf *)obj; break; }
@@ -202,10 +233,10 @@ DYLD_INTERPOSE(pb_CGLSetCurrentContext, CGLSetCurrentContext)
 
 static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLenum source) {
   (void)ctx;
-  if (!is_pb(obj)) return kCGLBadValue;
-  if (source == GL_NONE) return kCGLNoError;
-  PBuf *pb = (PBuf *)obj;
   pthread_mutex_lock(&g_pmu);
+  if (!is_pb(obj)) { pthread_mutex_unlock(&g_pmu); return kCGLBadValue; }
+  if (source == GL_NONE) { pthread_mutex_unlock(&g_pmu); return kCGLNoError; }
+  PBuf *pb = (PBuf *)obj;
   Assoc *a = assoc_for_pb(pb);
   if (!a || !a->ready) { pthread_mutex_unlock(&g_pmu); return kCGLNoError; }
   size_t n = (size_t)pb->w * (size_t)pb->h * 4;
@@ -221,11 +252,13 @@ static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLen
   glReadPixels(0, 0, pb->w, pb->h, GL_RGBA, GL_UNSIGNED_BYTE, px);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevRead);
   if (a->ctx != cur) CGLSetCurrentContext(cur);
+  GLsizei w = pb->w, h = pb->h;
+  GLenum target = pb->target, ifmt = pb->ifmt;
   pthread_mutex_unlock(&g_pmu);
   GLint prevUnpack = 4;
   glGetIntegerv(GL_UNPACK_ALIGNMENT, &prevUnpack);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glTexImage2D(pb->target, 0, pb->ifmt, pb->w, pb->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  glTexImage2D(target, 0, ifmt, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
   glPixelStorei(GL_UNPACK_ALIGNMENT, prevUnpack);
   free(px);
   return kCGLNoError;
@@ -233,7 +266,6 @@ static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLen
 DYLD_INTERPOSE(pb_CGLTexImagePBuffer, CGLTexImagePBuffer)
 
 static GLuint pb_fbo_for_current(void) {
-  if (!g_npbs) return 0;
   CGLContextObj cur = CGLGetCurrentContext();
   if (!cur) return 0;
   pthread_mutex_lock(&g_pmu);

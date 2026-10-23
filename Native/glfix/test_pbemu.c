@@ -55,6 +55,29 @@ int main(int argc, char **argv) {
   CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255, "texture holds pbuffer contents (red)");
   CHECK(CGLTexImagePBuffer(b, pb, GL_NONE) == kCGLNoError, "release teximage");
   CGLReleasePBuffer(pb); CHECK(1, "release pbuffer");
+  int recycled = 0;
+  for (int i = 0; i < 5000; i++) {
+    CGLPBufferObj tmp = NULL;
+    if (CGLCreatePBuffer(16, 16, GL_TEXTURE_2D, GL_RGBA, 0, &tmp) != kCGLNoError || !tmp) break;
+    CGLReleasePBuffer(tmp);
+    if (CGLDescribePBuffer(tmp, &w, &h, &t, &f, &mm) != kCGLBadValue) break;
+    recycled++;
+  }
+  CHECK(recycled == 5000, "5000 create/release cycles reclaim pbuffer table slots");
+
+  CGLPBufferObj pb2 = NULL;
+  CHECK(CGLCreatePBuffer(16, 16, GL_TEXTURE_2D, GL_RGBA, 0, &pb2) == kCGLNoError && pb2, "create associated lifetime pbuffer");
+  CHECK(CGLSetPBuffer(a, pb2, 0, 0, 0) == kCGLNoError, "associate lifetime pbuffer");
+  CGLReleasePBuffer(pb2);
+  CHECK(CGLDescribePBuffer(pb2, &w, &h, &t, &f, &mm) == kCGLNoError && w == 16 && h == 16,
+        "released pbuffer stays valid while associated");
+  CHECK(CGLSetPBuffer(b, pb2, 0, 0, 0) == kCGLBadValue, "released pbuffer rejects new associations");
+  // The shim supports NULL to detach, despite the SDK's nonnull annotation.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnonnull"
+  CHECK(CGLSetPBuffer(a, NULL, 0, 0, 0) == kCGLNoError, "detach released pbuffer");
+#pragma clang diagnostic pop
+  CHECK(CGLDescribePBuffer(pb2, &w, &h, &t, &f, &mm) == kCGLBadValue, "detached released pbuffer is reclaimed");
   printf("%s (%d failures)\n", fails ? "PBEMU TEST FAILED" : "PBEMU TEST PASSED", fails);
   return fails ? 1 : 0;
 }

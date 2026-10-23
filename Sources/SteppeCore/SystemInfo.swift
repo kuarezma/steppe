@@ -40,6 +40,15 @@ public struct SystemInfo: Sendable {
     /// Free space usable for new files at `url` (nearest existing ancestor).
     /// `statfs` is used because the "important usage" resource value is 0 for volumes other than the startup disk.
     public static func freeBytes(at url: URL) -> Int64 {
+        let components = url.standardizedFileURL.pathComponents
+        if components.count > 2, components[1] == "Volumes" {
+            // An unmounted external drive (or a leftover stub directory under /Volumes) must not fall back to the startup disk.
+            let mountPoint = "/Volumes/" + components[2]
+            var mountStats = statfs(), volumesStats = statfs()
+            guard statfs(mountPoint, &mountStats) == 0, statfs("/Volumes", &volumesStats) == 0 else { return 0 }
+            let isRootSymlink = (try? FileManager.default.destinationOfSymbolicLink(atPath: mountPoint)) == "/"
+            if !isRootSymlink && mountStats.f_fsid.val == volumesStats.f_fsid.val { return 0 }
+        }
         var probe = url
         while !FileManager.default.fileExists(atPath: probe.path), probe.pathComponents.count > 1 {
             probe.deleteLastPathComponent()

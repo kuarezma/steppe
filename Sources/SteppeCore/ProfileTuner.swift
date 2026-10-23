@@ -13,9 +13,12 @@ public enum ProfileConfig {
     public static func settingScreenResolution(_ resolution: Resolution, in text: String) -> String? {
         guard let span = resolutionSpan(in: text) else { return nil }
         var result = text
-        // Replace height first so earlier ranges stay valid.
-        result.replaceSubrange(span.heightValueRange, with: String(resolution.height))
-        result.replaceSubrange(span.widthValueRange, with: String(resolution.width))
+        // Replace the later value first, regardless of the field order.
+        let replacements = [(span.widthValueRange, String(resolution.width)),
+                            (span.heightValueRange, String(resolution.height))]
+        for (range, value) in replacements.sorted(by: { $0.0.lowerBound > $1.0.lowerBound }) {
+            result.replaceSubrange(range, with: value)
+        }
         return result
     }
 
@@ -59,7 +62,8 @@ public enum ProfileTuner {
             let cfg = profilesDir.appendingPathComponent(name).appendingPathComponent("profile.cfg")
             guard fm.fileExists(atPath: cfg.path) else { continue }
             let data = try Data(contentsOf: cfg)
-            guard let text = String(data: data, encoding: .utf8) else {
+            // Latin-1 preserves every original byte; only ASCII resolution digits change.
+            guard let text = String(data: data, encoding: .isoLatin1) else {
                 outcome.skipped.append(name)
                 continue
             }
@@ -73,7 +77,7 @@ public enum ProfileTuner {
             }
             let backup = cfg.appendingPathExtension("steppe-orig")
             if !fm.fileExists(atPath: backup.path) { try data.write(to: backup) }
-            try Data(updated.utf8).write(to: cfg, options: .atomic)
+            try updated.data(using: .isoLatin1)!.write(to: cfg, options: .atomic)
             outcome.updated.append(name)
         }
         return outcome

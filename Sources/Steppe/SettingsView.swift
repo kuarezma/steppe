@@ -18,7 +18,9 @@ struct SettingsView: View {
     }
 
     private var resolutionChoices: [Resolution] {
-        var list = ResolutionPlanner.choices(display: controller.display?.size ?? Resolution(width: 1440, height: 900))
+        // Once Windows has reported its modes, offer exactly those: anything else is snapped before launch anyway.
+        var list = controller.displayModes?.all.filter { $0.width >= ResolutionPlanner.minimum.width }
+            ?? ResolutionPlanner.choices(display: controller.display?.size ?? Resolution(width: 1440, height: 900))
         if !list.contains(controller.settings.customResolution) { list.append(controller.settings.customResolution) }
         return list.sorted { $0.pixels < $1.pixels }
     }

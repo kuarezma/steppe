@@ -38,6 +38,92 @@ final class ResolutionPlannerTests: XCTestCase {
     }
 }
 
+final class DisplayModesTests: XCTestCase {
+    /// `list-modes.exe` output from issue 1: external 1920×1080 display primary, built-in panel 3420×2212 pixels.
+    static let issue1Output = """
+    current 1920 1080
+    mode 800 600
+    mode 960 540
+    mode 1024 576
+    mode 1024 768
+    mode 1152 648
+    mode 1280 720
+    mode 1280 960
+    mode 1280 1024
+    mode 1344 756
+    mode 1344 1008
+    mode 1360 768
+    mode 1504 846
+    mode 1600 900
+    mode 1600 1200
+    mode 1680 945
+    mode 1920 1080
+    mode 1920 1080
+    mode 2048 1080
+    mode 2048 1152
+    mode 2304 1296
+    mode 2560 1440
+    mode 3008 1692
+    mode 3200 1800
+    mode 3360 1890
+    mode 3840 2160
+
+    """
+
+    func testParsesHelperOutputAndDropsDuplicates() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        XCTAssertEqual(modes.current, Resolution(width: 1920, height: 1080))
+        XCTAssertEqual(modes.all.count, 24)
+        XCTAssertEqual(Set(modes.all).count, modes.all.count)
+    }
+
+    func testParseIgnoresNoiseAndRejectsEmptyOutput() throws {
+        XCTAssertNil(DisplayModes.parse(""))
+        XCTAssertNil(DisplayModes.parse("mode 800 600\n"), "without the current mode the primary monitor is unknown")
+        XCTAssertNil(DisplayModes.parse("current 0 0\n"))
+        let modes = try XCTUnwrap(DisplayModes.parse("wine: noise\r\ncurrent 1280 800\r\nmode x y\r\n"))
+        XCTAssertEqual(modes.all, [Resolution(width: 1280, height: 800)], "the current mode is always a valid mode")
+    }
+
+    func testSnapKeepsAnEnumeratedMode() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        XCTAssertEqual(modes.snap(Resolution(width: 1600, height: 900)), Resolution(width: 1600, height: 900))
+    }
+
+    func testSnapPicksTheLargestModeOfTheMonitorsShapeThatIsNotBigger() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        XCTAssertEqual(modes.snap(Resolution(width: 1838, height: 1034)), Resolution(width: 1680, height: 945))
+        XCTAssertEqual(modes.snap(Resolution(width: 1710, height: 1106)), Resolution(width: 1680, height: 945),
+                       "a 16:9 monitor gets a 16:9 mode, not the 4:3 one closest to the planned shape")
+    }
+
+    func testSnapNeverReturnsAModeOutsideTheList() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        for planned in [Resolution(width: 1710, height: 1106), Resolution(width: 1710, height: 1112), Resolution(width: 640, height: 480),
+                        Resolution(width: 7000, height: 3000)] {
+            XCTAssertTrue(modes.all.contains(modes.snap(planned)), "\(planned)")
+        }
+        XCTAssertEqual(modes.snap(Resolution(width: 640, height: 480)), Resolution(width: 960, height: 540), "nothing fits: smallest mode of the monitor's shape")
+        XCTAssertEqual(modes.snap(Resolution(width: 7000, height: 3000)), Resolution(width: 3840, height: 2160))
+    }
+
+    func testIssue1PlansForTheWindowsMonitorNotTheBuiltInPanel() throws {
+        let modes = try XCTUnwrap(DisplayModes.parse(Self.issue1Output))
+        let builtIn = Resolution(width: 1710, height: 1106) // NSScreen frame of the 3420×2212 panel, in points
+        var settings = AppSettings()
+        XCTAssertEqual(settings.resolution(for: builtIn), Resolution(width: 1710, height: 1106), "the crashing value from the issue")
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1680, height: 945))
+
+        settings.preset = .native
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1920, height: 1080))
+
+        settings.useCustomResolution = true
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1680, height: 945),
+                       "the default custom 1710×1112 is not a mode here either")
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: nil), Resolution(width: 1710, height: 1112), "without a probe nothing changes")
+    }
+}
+
 final class ProfileConfigTests: XCTestCase {
     static let sample = """
     section.begin

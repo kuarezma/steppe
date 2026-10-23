@@ -58,6 +58,8 @@ Note: `vorbisfile.dll` is loaded lazily, *after* the game's startup box. Its own
 
 Runs inside the prefix. Finds the game's informational “video card does not support hardware acceleration” form (Delphi class `TMessageForm`, title “Cossacks III”, exactly one button, “OK”) and posts a mouse click to that button. `BM_CLICK` is ignored by the game's Delphi button; posted `WM_LBUTTONDOWN/UP` works. Dialogs with other buttons are left alone.
 
+`list-modes.exe` (same folder) prints the primary monitor's current mode and every mode `EnumDisplaySettings` returns. The game crashes at `00427A2B` when its configured resolution is not among them, so Steppe plans the resolution for that monitor and snaps it to a listed mode (`DisplayModes.snap`) before writing `profile.cfg`.
+
 ## 5. First-run files (`GameBootstrap`)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#why-the-first-run-files-exist).

@@ -35,6 +35,8 @@ Steppe declares microphone access (`NSMicrophoneUsageDescription` and `com.apple
 
 This is the fresh-install crash Steppe prevents with its first-run files. If you still see it, a profile folder or `hardware.info` in `Documents/cossacks` (inside the Windows environment) is probably from another setup. Close the game, delete that `cossacks` folder (your cloud saves return from Steam), and press Play again.
 
+The same crash happens when `profile.cfg` names a resolution Windows cannot list as a display mode, for example one planned for the built-in panel while the game runs on an external display. Steppe asks Windows for its modes before every launch and writes only one of them; the log shows `Windows monitor …, writing …`. If that line is missing, `list-modes.exe` could not run: attach *Settings → Export Diagnostics* to an issue.
+
 ## Black units, missing textures or a black screen
 
 Please file an issue with diagnostics and your Mac model. *Settings → Advanced → Record frame times* and the log in *Show Logs* help.

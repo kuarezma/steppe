@@ -63,7 +63,7 @@ for lang in en tr; do
 done
 cp Native/glfix/build/libglfix.dylib \
    Native/vorbis-fast/build/ogg.dll Native/vorbis-fast/build/vorbis.dll Native/vorbis-fast/build/vorbisfile.dll \
-   Native/dialog-helper/build/dismiss-dialog.exe \
+   Native/dialog-helper/build/dismiss-dialog.exe Native/dialog-helper/build/list-modes.exe \
    "$APP/Contents/Resources/Native/"
 cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"

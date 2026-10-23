@@ -64,9 +64,11 @@ public struct DisplayInfo: Equatable, Sendable {
     public let name: String
 
     #if canImport(AppKit)
+    /// The menu-bar display, which Wine's Mac driver makes the primary Windows monitor. `NSScreen.main`
+    /// is the screen with the key window and can be a different display (issue 1).
     @MainActor
-    public static func main() -> DisplayInfo {
-        let screen = NSScreen.main ?? NSScreen.screens.first
+    public static func primary() -> DisplayInfo {
+        let screen = NSScreen.screens.first ?? NSScreen.main
         guard let screen else {
             return DisplayInfo(size: Resolution(width: 1440, height: 900), scale: 2, maxRefreshRate: 60, name: "Unknown")
         }

@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.1.5] — Unreleased
+## [0.1.5]
 
 ### Added
 - Early-crash detection (`LaunchOutcome`): detects rapid exits (< 15 seconds), classifies crash signatures (including Delphi `00427A2B` access violations), and surfaces actionable recovery hints on the Ready screen.

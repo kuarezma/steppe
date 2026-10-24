@@ -524,9 +524,13 @@ public final class SteppeController: ObservableObject {
 
             display = DisplayInfo.primary()
             phase = .playing(L("Preparing"))
-            displayModes = await probeDisplayModes()
+            if !settings.useCustomResolution && displayModes == nil {
+                displayModes = await probeDisplayModes()
+            }
             let resolution = plannedResolution
-            if let modes = displayModes {
+            if settings.useCustomResolution {
+                Log.shared.info("Using custom resolution \(resolution) (display mode probe skipped)")
+            } else if let modes = displayModes {
                 Log.shared.info("Windows monitor \(modes.current), \(modes.all.count) modes; planned \(settings.resolution(for: modes.current)), writing \(resolution)")
             }
             seedFirstRunFiles(resolution)
@@ -607,6 +611,24 @@ public final class SteppeController: ObservableObject {
 
     /// Writes the files the game needs on a fresh install (see `GameBootstrap`); existing files are left alone.
     private func seedFirstRunFiles(_ resolution: Resolution) {
+        Log.shared.info("Selected Windows user folder: \(paths.windowsUserDir?.lastPathComponent ?? "none")")
+        let usersDir = paths.driveC.appendingPathComponent("users", isDirectory: true)
+        let userDirectories = (try? FileManager.default.contentsOfDirectory(at: usersDir, includingPropertiesForKeys: [.isDirectoryKey]))?
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .map(\.lastPathComponent)
+            .sorted()
+        Log.shared.info("Directories in drive_c/users: \(userDirectories?.joined(separator: ", ") ?? "unavailable")")
+        if let gameDir = steam.gameDirectory {
+            let iniURL = gameDir.appendingPathComponent("cossacks.ini")
+            if let text = try? String(contentsOf: iniURL, encoding: .isoLatin1) {
+                let value = text.components(separatedBy: .newlines).compactMap { line -> String? in
+                    let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                    guard parts.count == 2, parts[0] == "UseMultithreadedMode" else { return nil }
+                    return parts[1]
+                }.first
+                Log.shared.info("cossacks.ini UseMultithreadedMode: \(value ?? "not found")")
+            }
+        }
         guard let userDir = paths.windowsUserDir, let gameDir = steam.gameDirectory else { return }
         let locales = ((try? FileManager.default.contentsOfDirectory(atPath: gameDir.appendingPathComponent("data/locale").path)) ?? [])
         let language = Locale.preferredLanguages.first.flatMap { Locale(identifier: $0).language.languageCode?.identifier } ?? "en"

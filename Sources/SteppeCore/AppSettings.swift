@@ -32,9 +32,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         useCustomResolution ? customResolution : ResolutionPlanner.plan(display: display, preset: preset)
     }
 
-    /// The resolution to write before a launch. With the modes Windows reported, plans for the monitor the
-    /// game runs on (not the Mac screen Steppe's window is on) and snaps to an enumerable mode.
+    /// The resolution to write before a launch. Custom resolutions are returned unchanged.
+    /// Otherwise, uses the monitor Windows reported and snaps the plan to an enumerable mode.
     public func resolution(for display: Resolution, modes: DisplayModes?) -> Resolution {
+        if useCustomResolution { return customResolution }
         guard let modes else { return resolution(for: display) }
         return modes.snap(resolution(for: modes.current))
     }

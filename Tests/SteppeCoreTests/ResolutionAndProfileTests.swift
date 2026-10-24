@@ -149,9 +149,12 @@ final class DisplayModesTests: XCTestCase {
         XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1920, height: 1080))
 
         settings.useCustomResolution = true
-        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1680, height: 945),
-                       "the default custom 1710×1112 is not a mode here either")
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), Resolution(width: 1710, height: 1112),
+                       "the default custom resolution is preserved even when it is not an enumerated mode")
         XCTAssertEqual(settings.resolution(for: builtIn, modes: nil), Resolution(width: 1710, height: 1112), "without a probe nothing changes")
+        settings.customResolution = Resolution(width: 1600, height: 900)
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: modes), settings.customResolution)
+        XCTAssertEqual(settings.resolution(for: builtIn, modes: nil), settings.customResolution)
     }
 }
 

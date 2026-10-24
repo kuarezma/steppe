@@ -2,6 +2,13 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.10]
+
+### Fixed
+- Preserve custom resolution (`AppSettings.resolution(for:modes:)`): custom resolutions (such as `1600×900` on a notched built-in MacBook display) are now written directly to `profile.cfg` without being snapped to Windows `DisplayModes`, giving users full manual control over game dimensions.
+- Skip redundant display-mode probe before launch (`SteppeController.runPlay`): `list-modes.exe` is no longer spawned before launching `cossacks.exe` when custom resolution is enabled, and cached `displayModes` are reused across launches unless the macOS display topology changes (`handleDisplayChange`), noticeably speeding up launch times.
+- Startup environment diagnostics (`SteppeController.seedFirstRunFiles`): logs the selected Windows user folder, directory listing under `drive_c/users`, and `cossacks.ini` `UseMultithreadedMode` setting on startup to streamline troubleshooting and prefix analysis.
+
 ## [0.1.9]
 
 ### Fixed

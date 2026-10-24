@@ -19,6 +19,7 @@
 "Balanced" = "Dengeli";
 "Cancel" = "Vazgeç";
 "Change…" = "Değiştir…";
+"Check for updates automatically" = "Güncellemeleri otomatik denetle";
 "Check for Updates…" = "Güncellemeleri Denetle…";
 "Check your Mac" = "Mac'inizi denetle";
 "Checking the disk…" = "Disk denetleniyor…";
@@ -38,6 +39,7 @@
 "Creating the Windows environment" = "Windows ortamı oluşturuluyor";
 "Denied" = "Reddedildi";
 "Diagnostics saved. Personal data is removed from the file." = "Tanılama kaydedildi. Kişisel veriler dosyadan çıkarıldı.";
+"Download and install updates automatically" = "Güncellemeleri otomatik indir ve yükle";
 "Download Cossacks 3" = "Cossacks 3'ü indir";
 "Download the game engine" = "Oyun motorunu indir";
 "Downloading graphics libraries" = "Grafik kütüphaneleri indiriliyor";
@@ -60,11 +62,13 @@
 "Installs Steam in a separate Windows environment and asks you to sign in" = "Steam'i ayrı bir Windows ortamına kurar ve giriş yapmanızı ister";
 "Interface language" = "Arayüz dili";
 "Language" = "Dil";
+"Last checked: %@" = "Son denetim: %@";
 "Launching Cossacks 3" = "Cossacks 3 başlatılıyor";
 "Lowest resolution. Smoothest on any Mac." = "En düşük çözünürlük. Her Mac'te en akıcı seçenek.";
 "Maintenance" = "Bakım";
 "Microphone access" = "Mikrofon erişimi";
 "Native" = "Yerel";
+"Never" = "Hiçbir zaman";
 "Not available yet" = "Henüz yok";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Yeterli boş disk alanı yok: %@ gerekli, %@ mevcut. Yer açın veya başka bir disk seçin.";
 "Not requested yet" = "Henüz istenmedi";
@@ -86,6 +90,7 @@
 "Ready to play" = "Oynamaya hazır";
 "Recommended. Sharp enough and smooth on most Macs." = "Önerilen. Çoğu Mac'te yeterince net ve akıcı.";
 "Record frame times" = "Kare sürelerini kaydet";
+"Release Notes on GitHub" = "GitHub Sürüm Notları";
 "Renders at %@" = "%@ çözünürlükte çizer";
 "Renders at %@ on %@" = "%2$@ üzerinde %1$@ çözünürlükte çizer";
 "Repair" = "Onar";
@@ -123,6 +128,7 @@
 "Steam is preparing the download" = "Steam indirmeyi hazırlıyor";
 "Steam needs your attention" = "Steam'in ilginize ihtiyacı var";
 "Steam was closed. Open it again and the download continues where it stopped." = "Steam kapatılmış. Yeniden açın; indirme kaldığı yerden devam eder.";
+"Steppe %@" = "Steppe %@";
 "Steppe is an independent project. It is not affiliated with GSC Game World, Valve or Apple." = "Steppe bağımsız bir projedir. GSC Game World, Valve veya Apple ile bağlantılı değildir.";
 "Steppe is not affiliated with GSC Game World, Valve or Apple. Cossacks is a trademark of its owners." = "Steppe, GSC Game World, Valve veya Apple ile bağlantılı değildir. Cossacks, sahiplerinin ticari markasıdır.";
 "Steppe needs a Mac with Apple silicon (M1 or newer)." = "Steppe, Apple silikonlu (M1 veya daha yeni) bir Mac gerektirir.";
@@ -145,6 +151,7 @@
 "Uninstall everything?" = "Her şey kaldırılsın mı?";
 "Uninstall Everything…" = "Her Şeyi Kaldır…";
 "Unpacking" = "Açılıyor";
+"Updates" = "Güncellemeler";
 "Updating the Windows environment" = "Windows ortamı güncelleniyor";
 "Version" = "Sürüm";
 "Waiting for Steam — sign in there if it asks" = "Steam bekleniyor — isterse orada giriş yapın";

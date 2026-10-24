@@ -4,11 +4,23 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var controller: SteppeController
+    @EnvironmentObject var updater: UpdaterModel
     @State private var confirmUninstall = false
     @State private var confirmRepair = false
     @State private var toast: String?
     @State private var language = AppLanguage.stored
     @State private var languageChanged = false
+
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }
+
+    private var lastCheckedText: String {
+        guard let date = updater.lastUpdateCheckDate else {
+            return String(localized: "Never")
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
 
     private var busy: Bool {
         switch controller.phase {
@@ -117,8 +129,28 @@ struct SettingsView: View {
                 if let toast { Text(verbatim: toast).font(.caption).foregroundStyle(.secondary) }
             }
 
+            Section("Updates") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Steppe \(currentVersion)")
+                            .font(.body.weight(.medium))
+                        Text("Last checked: \(lastCheckedText)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Check for Updates…") { updater.check() }
+                        .disabled(!updater.canCheck || busy)
+                }
+                Toggle("Check for updates automatically", isOn: $updater.automaticallyChecksForUpdates)
+                    .disabled(!updater.isConfigured)
+                Toggle("Download and install updates automatically", isOn: $updater.automaticallyDownloadsUpdates)
+                    .disabled(!updater.isConfigured || !updater.automaticallyChecksForUpdates)
+                Link("Release Notes on GitHub", destination: URL(string: "https://github.com/kuarezma/steppe/releases")!)
+            }
+
             Section("About") {
-                LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
+                LabeledContent("Version", value: currentVersion)
                 Link("Project on GitHub", destination: URL(string: "https://github.com/kuarezma/steppe")!)
                 Text("Steppe is not affiliated with GSC Game World, Valve or Apple. Cossacks is a trademark of its owners.")
                     .font(.caption).foregroundStyle(.secondary)

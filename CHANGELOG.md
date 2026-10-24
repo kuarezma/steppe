@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.8]
+
+### Added
+- In-app **Updates** section in *Settings* and quick **Check for Updates…** button on the Welcome and Ready screens: shows the current Steppe version and last update check timestamp, lets users check for updates with one click, toggle automatic update checks and automatic background update installation, and open GitHub release notes directly.
+
 ## [0.1.7]
 
 ### Fixed

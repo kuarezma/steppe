@@ -3,13 +3,31 @@ import SwiftUI
 
 struct ReadyView: View {
     @EnvironmentObject var controller: SteppeController
+    @EnvironmentObject var updater: UpdaterModel
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 14) {
                 Brand()
                 Spacer()
+                Button {
+                    updater.check()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Check for Updates…")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!updater.canCheck)
+                .help(Text("Check for Updates…"))
+
                 Button {
                     openSettings()
                 } label: {

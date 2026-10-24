@@ -19,6 +19,7 @@
 "Balanced" = "Balanced";
 "Cancel" = "Cancel";
 "Change…" = "Change…";
+"Check for updates automatically" = "Check for updates automatically";
 "Check for Updates…" = "Check for Updates…";
 "Check your Mac" = "Check your Mac";
 "Checking the disk…" = "Checking the disk…";
@@ -38,6 +39,7 @@
 "Creating the Windows environment" = "Creating the Windows environment";
 "Denied" = "Denied";
 "Diagnostics saved. Personal data is removed from the file." = "Diagnostics saved. Personal data is removed from the file.";
+"Download and install updates automatically" = "Download and install updates automatically";
 "Download Cossacks 3" = "Download Cossacks 3";
 "Download the game engine" = "Download the game engine";
 "Downloading graphics libraries" = "Downloading graphics libraries";
@@ -60,11 +62,13 @@
 "Installs Steam in a separate Windows environment and asks you to sign in" = "Installs Steam in a separate Windows environment and asks you to sign in";
 "Interface language" = "Interface language";
 "Language" = "Language";
+"Last checked: %@" = "Last checked: %@";
 "Launching Cossacks 3" = "Launching Cossacks 3";
 "Lowest resolution. Smoothest on any Mac." = "Lowest resolution. Smoothest on any Mac.";
 "Maintenance" = "Maintenance";
 "Microphone access" = "Microphone access";
 "Native" = "Native";
+"Never" = "Never";
 "Not available yet" = "Not available yet";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk.";
 "Not requested yet" = "Not requested yet";
@@ -86,6 +90,7 @@
 "Ready to play" = "Ready to play";
 "Recommended. Sharp enough and smooth on most Macs." = "Recommended. Sharp enough and smooth on most Macs.";
 "Record frame times" = "Record frame times";
+"Release Notes on GitHub" = "Release Notes on GitHub";
 "Renders at %@" = "Renders at %@";
 "Renders at %@ on %@" = "Renders at %@ on %@";
 "Repair" = "Repair";
@@ -123,6 +128,7 @@
 "Steam is preparing the download" = "Steam is preparing the download";
 "Steam needs your attention" = "Steam needs your attention";
 "Steam was closed. Open it again and the download continues where it stopped." = "Steam was closed. Open it again and the download continues where it stopped.";
+"Steppe %@" = "Steppe %@";
 "Steppe is an independent project. It is not affiliated with GSC Game World, Valve or Apple." = "Steppe is an independent project. It is not affiliated with GSC Game World, Valve or Apple.";
 "Steppe is not affiliated with GSC Game World, Valve or Apple. Cossacks is a trademark of its owners." = "Steppe is not affiliated with GSC Game World, Valve or Apple. Cossacks is a trademark of its owners.";
 "Steppe needs a Mac with Apple silicon (M1 or newer)." = "Steppe needs a Mac with Apple silicon (M1 or newer).";
@@ -145,6 +151,7 @@
 "Uninstall everything?" = "Uninstall everything?";
 "Uninstall Everything…" = "Uninstall Everything…";
 "Unpacking" = "Unpacking";
+"Updates" = "Updates";
 "Updating the Windows environment" = "Updating the Windows environment";
 "Version" = "Version";
 "Waiting for Steam — sign in there if it asks" = "Waiting for Steam — sign in there if it asks";

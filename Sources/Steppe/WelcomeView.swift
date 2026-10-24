@@ -4,13 +4,42 @@ import SwiftUI
 
 struct WelcomeView: View {
     @EnvironmentObject var controller: SteppeController
+    @EnvironmentObject var updater: UpdaterModel
+    @Environment(\.openSettings) private var openSettings
 
     private var enoughSpace: Bool { controller.freeBytes >= controller.requiredFreeBytesNow }
     private var canInstall: Bool { controller.hasCheckedDisk && enoughSpace }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Brand()
+            HStack(spacing: 14) {
+                Brand()
+                Spacer()
+                Button {
+                    updater.check()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Check for Updates…")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!updater.canCheck)
+                .help(Text("Check for Updates…"))
+
+                Button {
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape.fill").font(.system(size: 15)).foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(Text("Settings"))
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Play Cossacks 3 on your Mac")

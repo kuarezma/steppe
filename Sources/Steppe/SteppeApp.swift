@@ -18,6 +18,7 @@ struct SteppeApp: App {
         Window("Steppe", id: "main") {
             RootView()
                 .environmentObject(controller)
+                .environmentObject(updater)
                 .onAppear { delegate.controller = controller }
                 .onChange(of: controller.phase) { _, phase in
                     switch phase {
@@ -39,7 +40,9 @@ struct SteppeApp: App {
         }
 
         Settings {
-            SettingsView().environmentObject(controller)
+            SettingsView()
+                .environmentObject(controller)
+                .environmentObject(updater)
         }
     }
 }
@@ -73,11 +76,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Wraps Sparkle so updates are checked automatically but never interrupt a setup or a game.
+/// Wraps Sparkle so updates are checked automatically, exposed in Settings and the main toolbar, and never interrupt a setup or a game.
 @MainActor
 final class UpdaterModel: NSObject, ObservableObject, SPUUpdaterDelegate {
     @Published private(set) var canCheck = false
+    @Published private(set) var isConfigured = false
+    @Published private(set) var lastUpdateCheckDate: Date?
+    @Published var automaticallyChecksForUpdates = true {
+        didSet {
+            guard let updater = controller?.updater, updater.automaticallyChecksForUpdates != automaticallyChecksForUpdates else { return }
+            updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+            if !automaticallyChecksForUpdates {
+                automaticallyDownloadsUpdates = false
+            }
+        }
+    }
+    @Published var automaticallyDownloadsUpdates = true {
+        didSet {
+            guard let updater = controller?.updater, updater.automaticallyDownloadsUpdates != automaticallyDownloadsUpdates else { return }
+            updater.automaticallyDownloadsUpdates = automaticallyDownloadsUpdates
+        }
+    }
     private var controller: SPUStandardUpdaterController?
+    private var cancellables: Set<AnyCancellable> = []
 
     // Sparkle calls the delegate from its own threads, so the busy flag and the held relaunch block share a lock.
     private nonisolated static let lock = NSLock()
@@ -97,14 +118,38 @@ final class UpdaterModel: NSObject, ObservableObject, SPUUpdaterDelegate {
         super.init()
         // Development builds (no feed in Info.plist) do not start the updater.
         let configured = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil
+        isConfigured = configured
         let c = SPUStandardUpdaterController(startingUpdater: configured, updaterDelegate: self, userDriverDelegate: nil)
         controller = c
         if configured {
-            c.updater.publisher(for: \.canCheckForUpdates).receive(on: DispatchQueue.main).assign(to: &$canCheck)
+            automaticallyChecksForUpdates = c.updater.automaticallyChecksForUpdates
+            automaticallyDownloadsUpdates = c.updater.automaticallyDownloadsUpdates
+            lastUpdateCheckDate = c.updater.lastUpdateCheckDate
+            c.updater.publisher(for: \.canCheckForUpdates)
+                .receive(on: DispatchQueue.main)
+                .assign(to: &$canCheck)
+            c.updater.publisher(for: \.lastUpdateCheckDate)
+                .receive(on: DispatchQueue.main)
+                .assign(to: &$lastUpdateCheckDate)
+            c.updater.publisher(for: \.automaticallyChecksForUpdates)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] value in
+                    if self?.automaticallyChecksForUpdates != value { self?.automaticallyChecksForUpdates = value }
+                }
+                .store(in: &cancellables)
+            c.updater.publisher(for: \.automaticallyDownloadsUpdates)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] value in
+                    if self?.automaticallyDownloadsUpdates != value { self?.automaticallyDownloadsUpdates = value }
+                }
+                .store(in: &cancellables)
         }
     }
 
-    func check() { controller?.checkForUpdates(nil) }
+    func check() {
+        NSApp.activate(ignoringOtherApps: true)
+        controller?.checkForUpdates(nil)
+    }
 
     nonisolated func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
         Self.lock.lock()

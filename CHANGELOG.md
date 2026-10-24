@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.6]
+
+### Added
+- Automatic MacBook camera notch HUD layout (`GameFiles.applyNotchHUD` & `DisplayInfo.hasNotch`): on MacBooks with a camera notch (`safeAreaInsets.top > 0`), the top resource bar (`ShowResourcePanel`) is automatically split around the notch — **Wood, Food, Stone** sit cleanly to the left of the notch and **Gold, Iron, Coal** sit to the right. Non-notched Macs, external monitors, and 16:10/16:9 display modes keep the original single-piece bar untouched, and `.steppe-orig` backups are automatically restored when switching to a non-notched display or running *Restore original game files*.
+
 ## [0.1.5]
 
 ### Added

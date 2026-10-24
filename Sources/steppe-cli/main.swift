@@ -9,6 +9,7 @@ import SteppeCore
 //   steppe-cli play        [--root DIR] [--native DIR]
 //   steppe-cli diagnostics [--root DIR]
 //   steppe-cli resolution  WIDTH HEIGHT [preset]
+//   steppe-cli notch-hud   [--root DIR] [--enable | --disable]
 
 func argument(_ name: String) -> String? {
     guard let i = CommandLine.arguments.firstIndex(of: name), i + 1 < CommandLine.arguments.count else { return nil }
@@ -96,6 +97,16 @@ func run() async {
         }
     case "diagnostics":
         do { print(try controller.exportDiagnostics().path) } catch { fail("\(error)") }
+    case "notch-hud":
+        guard let gameDir = SteamKit(paths: controller.paths, manifest: RuntimeManifest.current).gameDirectory else {
+            fail("Cossacks 3 is not installed in this prefix")
+        }
+        let enabled: Bool
+        if CommandLine.arguments.contains("--enable") { enabled = true }
+        else if CommandLine.arguments.contains("--disable") { enabled = false }
+        else { enabled = DisplayInfo.primary().hasNotch }
+        let statuses = GameFiles.applyNotchHUD(in: gameDir, enabled: enabled)
+        print("notch-hud (\(enabled ? "enabled" : "disabled")): \(statuses)")
     default:
         fail("unknown command \(command)")
     }

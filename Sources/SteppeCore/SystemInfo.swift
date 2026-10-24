@@ -71,6 +71,15 @@ public struct DisplayInfo: Equatable, Sendable {
     public let scale: Double
     public let maxRefreshRate: Int
     public let name: String
+    public let hasNotch: Bool
+
+    public init(size: Resolution, scale: Double, maxRefreshRate: Int, name: String, hasNotch: Bool = false) {
+        self.size = size
+        self.scale = scale
+        self.maxRefreshRate = maxRefreshRate
+        self.name = name
+        self.hasNotch = hasNotch
+    }
 
     #if canImport(AppKit)
     /// The menu-bar display, which Wine's Mac driver makes the primary Windows monitor. `NSScreen.main`
@@ -79,14 +88,15 @@ public struct DisplayInfo: Equatable, Sendable {
     public static func primary() -> DisplayInfo {
         let screen = NSScreen.screens.first ?? NSScreen.main
         guard let screen else {
-            return DisplayInfo(size: Resolution(width: 1440, height: 900), scale: 2, maxRefreshRate: 60, name: "Unknown")
+            return DisplayInfo(size: Resolution(width: 1440, height: 900), scale: 2, maxRefreshRate: 60, name: "Unknown", hasNotch: false)
         }
         let f = screen.frame
         return DisplayInfo(
             size: Resolution(width: Int(f.width), height: Int(f.height)),
             scale: Double(screen.backingScaleFactor),
             maxRefreshRate: screen.maximumFramesPerSecond,
-            name: screen.localizedName
+            name: screen.localizedName,
+            hasNotch: screen.safeAreaInsets.top > 0
         )
     }
     #endif

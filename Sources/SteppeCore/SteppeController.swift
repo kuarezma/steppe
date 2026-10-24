@@ -532,6 +532,10 @@ public final class SteppeController: ObservableObject {
             seedFirstRunFiles(resolution)
             applyTuning(resolution)
             let speedStatus = installSpeedLibraries()
+            if let gameDir = steam.gameDirectory {
+                let notchStatus = GameFiles.applyNotchHUD(in: gameDir, enabled: display?.hasNotch == true)
+                Log.shared.info("Notch HUD (\(display?.hasNotch == true ? "enabled" : "disabled")): \(notchStatus)")
+            }
 
             try? FileManager.default.createDirectory(at: paths.patchLogFile.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: paths.patchLogFile)

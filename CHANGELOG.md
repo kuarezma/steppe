@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.9]
+
+### Fixed
+- MacBook camera notch HUD layout (`GameFiles.applyNotchHUD`): splits the top 6-resource bar left and right of the camera notch at the very top edge (**Wood, Food, Stone** on the left; **Gold, Iron, Coal** on the right) while shifting the left-side status column (**Population/House icon and text**, **Idle Peasants**, **Idle Mines**, and **Scenario Objectives**) down onto the row directly below the left resource bar (`notchLeftDropY = 48`). This keeps the resource bar docked cleanly at the top edge beside the notch while completely preventing any overlap with the top-left population text.
+
 ## [0.1.8]
 
 ### Added

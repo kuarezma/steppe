@@ -44,18 +44,6 @@ final class GameFilesTests: XCTestCase {
     }
 
 
-    private static let hudOriginal = #"""
-    section.begin {refurl=.\data\hud\ref\reflibmat.mat}
-       Material.Name = resourcepanel.background
-       Material.LibTextureName = tex03
-       Material.TextureCoord.ImageH = 512
-       Material.TextureCoord.CoordX = 386
-       Material.TextureCoord.CoordY = 183
-       Material.TextureCoord.CoordW = 1159
-       Material.TextureCoord.CoordH = 58
-    section.end
-    """#
-
     private static let panelOriginal = """
           [*] = ;if ((GetViewerWidth)<1260) then
           [*] = ;dpiscale := GetViewerWidth/1260;
@@ -72,81 +60,123 @@ final class GameFilesTests: XCTestCase {
           [*] = ;var elm : Integer = _gui_CreateImageActive('resbackground', elmParent, 'resourcepanel.background', gc_halParentMiddle, gc_valParentTop, xoff, cResourceOffY, 0, 0, 0, '', '', True);
     """
 
-    private static let offsetsOriginal = """
-          [*] = ;   const cSideOffsetX = -10;
-          [*] = ;   if (i<4) then
-          [*] = ;   x := x+(cSideOffsetX div 2)
+    private static let resourceTextsOriginal = """
+          [*] = ;   _gui_CreateTextShadowed('resource'+IntToStr(ind), elmParent, text, gc_halParentMiddle, gc_valParentTop, x+xoff, cResourceOffY-4, cResourceSizeX, GetGUIElementHeight(elmParent), gc_halLeft, gc_valMiddle, gc_font_serif_13, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;   if (dpiscale=2) then
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentMiddle, x-160+xoff, cResourceOffY-10, cResourceSizeX-10, GetGUIElementHeight(elmParent), 0, '', hint, True)
           [*] = ;   else
-          [*] = ;   x := x+cSideOffsetX+4;
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentMiddle, x-60+xoff, cResourceOffY-10, cResourceSizeX-10, GetGUIElementHeight(elmParent), 0, '', hint, True);
     """
 
-    private let hudPaths = ["data/hud/hud.mat", "data/gui/menu.inc/showresourcepanel.inc"]
+    private static let populationCreateOriginal = """
+          [*] = ;var elmPopulationHnd : Integer = _gui_CreateImageActive('population', elmParent, gc_gui_material_blank, gc_halParentLeft, gc_valParentTop, 0, 5, 142, GetGUIElementHeight(elmParent), 0, '', cTextHintFarm, True);
+    """
 
-    private func writeHUD(in game: URL, newline: String = "\n") throws -> [Data] {
+    private static let populationAndIdleOriginal = """
+          [*] = ;_gui_CreateTextShadowed('_txt_population', elmPopulationHnd, text, gc_halParentLeft, gc_valParentTop, cPopulationOffsetX, 0, 0, GetGUIElementHeight(elmParent), gc_halLeft, gc_valMiddle, gc_font_sans_12, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;var bObjectivesExists : Boolean;
+          [*] = ;if (gScenario.bactive) then
+          [*] = ;begin
+          [*] = ;   var i : Integer;
+          [*] = ;   for i:=0 to gc_scenario_maxobjectives-1 do
+          [*] = ;   if (gScenario.objectives[i].bvisible) then
+          [*] = ;   begin
+          [*] = ;      bObjectivesExists := True;
+          [*] = ;      break;
+          [*] = ;   end;
+          [*] = ;end;
+          [*] = ;
+          [*] = ;var posY : Integer;
+          [*] = ;if (bObjectivesExists) then
+          [*] = ;posY := 50;
+    """
+
+    private static let objectivesOriginal = """
+          [*] = ;var elmObjectives : Integer = _gui_CreateParent('objs', elmParent, gc_halParentLeft, gc_valParentTop, 54+5+cpadding-8, 66+cpadding-8, 0, 0, True);
+          [*] = ;if (bPaper) then
+          [*] = ;elmObjectivesBackground := _gui_CreateParent('bcg', elmObjectives, gc_halParentLeft, gc_valParentTop, 0, 0, 0, 0, True);
+          [*] = ;//SetGUIElementUserBlend(elmObjectives, 1);
+          [*] = ;if (gScenario.bactive) then
+          [*] = ;begin
+          [*] = ;   var listid : TIntegerList;
+          [*] = ;   var listgametime : TIntegerList;
+          [*] = ;   var material : String;
+          [*] = ;   if (not bObjectivesExists) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectivesDisabled;
+          [*] = ;   end
+          [*] = ;   else
+          [*] = ;   if (not gInterface.bhideobjectives) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'hideobjectives';
+          [*] = ;      hint := cTextHideObjectives;
+          [*] = ;   end
+          [*] = ;   else
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectives;
+          [*] = ;   end;
+          [*] = ;   var elmSwitchShowObjectivesHnd : Integer = _gui_CreateImage('_img_switchobjectives', elmParent, material, gc_halParentLeft, gc_valParentTop, 3, 64{+50+50}, 0, 0, 0, True);
+    """
+
+    private let panelPath = "data/gui/menu.inc/showresourcepanel.inc"
+
+    private func writeHUD(in game: URL, newline: String = "\n") throws -> Data {
         // Non-ASCII Latin-1 bytes and surrounding content must survive patching unchanged.
-        let contents = [Self.hudOriginal, Self.panelOriginal + "\n// resources\n" + Self.offsetsOriginal]
-        return try zip(hudPaths, contents).map { path, content in
-            let target = game.appendingPathComponent(path)
-            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let text = ("// café\n" + content + "\n// fin\n").replacingOccurrences(of: "\n", with: newline)
-            let data = try XCTUnwrap(text.data(using: .isoLatin1))
-            try data.write(to: target)
-            return data
-        }
+        let body = [
+            Self.panelOriginal,
+            Self.resourceTextsOriginal,
+            Self.populationCreateOriginal,
+            Self.populationAndIdleOriginal,
+            Self.objectivesOriginal,
+        ].joined(separator: "\n// section\n")
+        let target = game.appendingPathComponent(panelPath)
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let text = ("// café\n" + body + "\n// fin\n").replacingOccurrences(of: "\n", with: newline)
+        let data = try XCTUnwrap(text.data(using: .isoLatin1))
+        try data.write(to: target)
+        return data
     }
 
-    func testNotchHUDPatchesBothFilesAndIsIdempotent() throws {
+    func testNotchHUDLowersResourceBarBelowNotchAndIsIdempotent() throws {
         for newline in ["\n", "\r\n"] {
             let (_, game, cleanup) = try makeDirs()
             defer { cleanup() }
-            let originals = try writeHUD(in: game, newline: newline)
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), hudPaths.map { .installed($0) })
-            for (index, path) in hudPaths.enumerated() {
-                let target = game.appendingPathComponent(path)
-                XCTAssertEqual(try Data(contentsOf: target.appendingPathExtension("steppe-orig")), originals[index])
-                let patched = try Data(contentsOf: target)
-                XCTAssertNotEqual(patched, originals[index])
-                let text = try XCTUnwrap(String(data: patched, encoding: .isoLatin1))
-                XCTAssertTrue(text.hasPrefix("// café" + newline))
-                XCTAssertTrue(text.hasSuffix("// fin" + newline))
-                if newline == "\r\n" {
-                    XCTAssertFalse(text.replacingOccurrences(of: "\r\n", with: "").contains("\n"))
-                } else {
-                    XCTAssertFalse(text.contains("\r"))
-                }
-                if index == 0 {
-                    let expected = Self.hudOriginal + "\n" + Self.hudOriginal
-                        .replacingOccurrences(of: "resourcepanel.background", with: "resourcepanel.background.left")
-                        .replacingOccurrences(of: "CoordW = 1159", with: "CoordW = 610") + "\n" + Self.hudOriginal
-                        .replacingOccurrences(of: "resourcepanel.background", with: "resourcepanel.background.right")
-                        .replacingOccurrences(of: "CoordX = 386", with: "CoordX = 996")
-                        .replacingOccurrences(of: "CoordW = 1159", with: "CoordW = 549")
-                    XCTAssertEqual(text, ("// café\n" + expected + "\n// fin\n").replacingOccurrences(of: "\n", with: newline))
-                } else {
-                    for fragment in [
-                        "var bNotchSplit : Boolean = (((GetViewerWidth/GetViewerHeight)>1.50) and ((GetViewerWidth/GetViewerHeight)<1.58));",
-                        "dpiscale := GetViewerWidth/1470", "var parentW : Integer = round(GetViewerWidth/dpiscale);",
-                        "notchHalfGap := round(parentW*0.068);", "notchLeftShift := -notchHalfGap-31;",
-                        "notchRightShift := notchHalfGap-31;", "xoff-275+notchLeftShift", "xoff+305+notchRightShift",
-                        "x := x+(cSideOffsetX div 2)+notchLeftShift", "x := x+cSideOffsetX+4+notchRightShift;",
-                    ] { XCTAssertTrue(text.contains(fragment), fragment) }
-                    XCTAssertFalse(text.contains("'resbackground',"))
-                }
+            let original = try writeHUD(in: game, newline: newline)
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.installed(panelPath)])
+            let target = game.appendingPathComponent(panelPath)
+            XCTAssertEqual(try Data(contentsOf: target.appendingPathExtension("steppe-orig")), original)
+            let patched = try Data(contentsOf: target)
+            XCTAssertNotEqual(patched, original)
+            let text = try XCTUnwrap(String(data: patched, encoding: .isoLatin1))
+            XCTAssertTrue(text.hasPrefix("// café" + newline))
+            XCTAssertTrue(text.hasSuffix("// fin" + newline))
+            if newline == "\r\n" {
+                XCTAssertFalse(text.replacingOccurrences(of: "\r\n", with: "").contains("\n"))
+            } else {
+                XCTAssertFalse(text.contains("\r"))
             }
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), hudPaths.map { .alreadyCurrent($0) })
-            // Reapply after Steam updates or restores the target files: refreshed backup must capture the new original.
-            let updatedOriginals = try originals.map { data -> Data in
-                let text = try XCTUnwrap(String(data: data, encoding: .isoLatin1)) + "// steam-update" + newline
-                return try XCTUnwrap(text.data(using: .isoLatin1))
-            }
-            for (index, path) in hudPaths.enumerated() {
-                try updatedOriginals[index].write(to: game.appendingPathComponent(path))
-            }
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), hudPaths.map { .installed($0) })
-            for (index, path) in hudPaths.enumerated() {
-                let target = game.appendingPathComponent(path)
-                XCTAssertEqual(try Data(contentsOf: target.appendingPathExtension("steppe-orig")), updatedOriginals[index])
-            }
+            for fragment in [
+                "var bNotchBar : Boolean = (((GetViewerWidth/GetViewerHeight)>1.50) and ((GetViewerWidth/GetViewerHeight)<1.58) and (GetDisplayMode<>'dmWindow'));",
+                "notchDropY := Max(46, round(GetViewerHeight*0.042/dpiscale));",
+                "resPanelBaseH+notchDropY",
+                "cResourceOffY+notchDropY",
+                "cResourceOffY-4+notchDropY, cResourceSizeX, resPanelBaseH",
+                "cResourceOffY-10+notchDropY, cResourceSizeX-10, resPanelBaseH",
+                "var posY : Integer = notchDropY;",
+                "66+cpadding-8+notchDropY",
+                "64+notchDropY{+50+50}",
+            ] { XCTAssertTrue(text.contains(fragment), fragment) }
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.alreadyCurrent(panelPath)])
+
+            // Reapply after Steam updates the target file: refreshed backup must capture the new original.
+            let updatedOriginal = try XCTUnwrap((String(data: original, encoding: .isoLatin1)! + "// steam-update" + newline).data(using: .isoLatin1))
+            try updatedOriginal.write(to: target)
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.installed(panelPath)])
+            XCTAssertEqual(try Data(contentsOf: target.appendingPathExtension("steppe-orig")), updatedOriginal)
         }
     }
 
@@ -154,20 +184,18 @@ final class GameFilesTests: XCTestCase {
         for useRestoreOriginals in [false, true] {
             let (_, game, cleanup) = try makeDirs()
             defer { cleanup() }
-            let originals = try writeHUD(in: game, newline: "\r\n")
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), hudPaths.map { .installed($0) })
+            let original = try writeHUD(in: game, newline: "\r\n")
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.installed(panelPath)])
             if useRestoreOriginals {
-                XCTAssertEqual(GameFiles.restoreOriginals(in: game), 2)
+                XCTAssertEqual(GameFiles.restoreOriginals(in: game), 1)
                 XCTAssertEqual(GameFiles.restoreOriginals(in: game), 0)
             } else {
-                XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: false), hudPaths.map { .installed($0) })
+                XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: false), [.installed(panelPath)])
             }
-            for (index, path) in hudPaths.enumerated() {
-                let target = game.appendingPathComponent(path)
-                XCTAssertEqual(try Data(contentsOf: target), originals[index])
-                XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathExtension("steppe-orig").path))
-            }
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: false), hudPaths.map { .alreadyCurrent($0) })
+            let target = game.appendingPathComponent(panelPath)
+            XCTAssertEqual(try Data(contentsOf: target), original)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathExtension("steppe-orig").path))
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: false), [.alreadyCurrent(panelPath)])
         }
     }
 
@@ -175,68 +203,52 @@ final class GameFilesTests: XCTestCase {
         for useRestoreOriginals in [false, true] {
             let (_, game, cleanup) = try makeDirs()
             defer { cleanup() }
-            let originals = try writeHUD(in: game)
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), hudPaths.map { .installed($0) })
-            let steamUpdated = originals[1] + Data("// steam-updated\n".utf8)
-            try steamUpdated.write(to: game.appendingPathComponent(hudPaths[1]))
+            let original = try writeHUD(in: game)
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.installed(panelPath)])
+            let target = game.appendingPathComponent(panelPath)
+            let steamUpdated = original + Data("// steam-updated\n".utf8)
+            try steamUpdated.write(to: target)
             if useRestoreOriginals {
-                XCTAssertEqual(GameFiles.restoreOriginals(in: game), 1)
+                XCTAssertEqual(GameFiles.restoreOriginals(in: game), 0)
             } else {
                 _ = GameFiles.applyNotchHUD(in: game, enabled: false)
             }
-            XCTAssertEqual(try Data(contentsOf: game.appendingPathComponent(hudPaths[0])), originals[0])
-            XCTAssertEqual(try Data(contentsOf: game.appendingPathComponent(hudPaths[1])), steamUpdated)
-            for path in hudPaths {
-                XCTAssertFalse(FileManager.default.fileExists(atPath: game.appendingPathComponent(path).appendingPathExtension("steppe-orig").path))
-            }
+            XCTAssertEqual(try Data(contentsOf: target), steamUpdated)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathExtension("steppe-orig").path))
         }
     }
 
-    func testNotchHUDRejectsUnknownBlocksWithoutTouchingEitherFile() throws {
-        for (index, block) in [(0, "CoordW = 1159"), (1, "GetViewerWidth/1260"), (1, "cSideOffsetX = -10")] {
+    func testNotchHUDRejectsUnknownBlocksWithoutTouchingFile() throws {
+        for block in ["GetViewerWidth/1260", "cResourceOffY-4", "cPopulationOffsetX", "66+cpadding-8"] {
             let (_, game, cleanup) = try makeDirs()
             defer { cleanup() }
-            var originals = try writeHUD(in: game)
-            let text = try XCTUnwrap(String(data: originals[index], encoding: .isoLatin1))
-            originals[index] = try XCTUnwrap(text.replacingOccurrences(of: block, with: "unknown").data(using: .isoLatin1))
-            try originals[index].write(to: game.appendingPathComponent(hudPaths[index]))
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.skippedUnknownFile(hudPaths[index])])
-            for (fileIndex, path) in hudPaths.enumerated() {
-                let target = game.appendingPathComponent(path)
-                XCTAssertEqual(try Data(contentsOf: target), originals[fileIndex])
-                XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathExtension("steppe-orig").path))
-            }
+            let original = try writeHUD(in: game)
+            let target = game.appendingPathComponent(panelPath)
+            let text = try XCTUnwrap(String(data: original, encoding: .isoLatin1))
+            let modified = try XCTUnwrap(text.replacingOccurrences(of: block, with: "unknown").data(using: .isoLatin1))
+            try modified.write(to: target)
+            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.skippedUnknownFile(panelPath)])
+            XCTAssertEqual(try Data(contentsOf: target), modified)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathExtension("steppe-orig").path))
         }
     }
 
-    func testNotchHUDMissingFileDoesNotPatchTheOtherFile() throws {
-        for missingIndex in hudPaths.indices {
-            let (_, game, cleanup) = try makeDirs()
-            defer { cleanup() }
-            let originals = try writeHUD(in: game)
-            try FileManager.default.removeItem(at: game.appendingPathComponent(hudPaths[missingIndex]))
-            XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.missing(hudPaths[missingIndex])])
-            let other = 1 - missingIndex
-            XCTAssertEqual(try Data(contentsOf: game.appendingPathComponent(hudPaths[other])), originals[other])
-            for path in hudPaths {
-                XCTAssertFalse(FileManager.default.fileExists(atPath: game.appendingPathComponent(path).appendingPathExtension("steppe-orig").path))
-            }
-        }
-    }
-
-    func testNotchHUDRejectsSplitMaterialsWithoutAnOriginalBackup() throws {
+    func testNotchHUDRestoresLegacyHudMatBackupIfPresent() throws {
         let (_, game, cleanup) = try makeDirs()
         defer { cleanup() }
-        let originals = try writeHUD(in: game)
-        let hud = game.appendingPathComponent(hudPaths[0])
-        let modified = originals[0] + Data("\nMaterial.Name = resourcepanel.background.left\n".utf8)
-        try modified.write(to: hud)
-        XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.skippedUnknownFile(hudPaths[0])])
-        XCTAssertEqual(try Data(contentsOf: hud), modified)
-        XCTAssertEqual(try Data(contentsOf: game.appendingPathComponent(hudPaths[1])), originals[1])
-        for path in hudPaths {
-            XCTAssertFalse(FileManager.default.fileExists(atPath: game.appendingPathComponent(path).appendingPathExtension("steppe-orig").path))
-        }
+        _ = try writeHUD(in: game)
+        let hudMat = game.appendingPathComponent("data/hud/hud.mat")
+        try FileManager.default.createDirectory(at: hudMat.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let hudOriginal = Data("original-hud-mat".utf8)
+        let hudPatched = Data("legacy-split-hud-mat".utf8)
+        try hudPatched.write(to: hudMat)
+        try hudOriginal.write(to: hudMat.appendingPathExtension("steppe-orig"))
+        let record = ["data/hud/hud.mat": Hashing.sha256(of: hudPatched)]
+        try JSONEncoder().encode(record).write(to: game.appendingPathComponent(GameFiles.installedRecordName))
+
+        XCTAssertEqual(GameFiles.applyNotchHUD(in: game, enabled: true), [.installed(panelPath)])
+        XCTAssertEqual(try Data(contentsOf: hudMat), hudOriginal)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hudMat.appendingPathExtension("steppe-orig").path))
     }
 
     func testReplacesVerifiedOriginalsOnlyAndKeepsBackup() throws {

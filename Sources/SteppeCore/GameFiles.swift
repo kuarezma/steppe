@@ -79,18 +79,6 @@ public enum GameFiles {
     public static let hudMatRelativePath = "data/hud/hud.mat"
     public static let resourcePanelRelativePath = "data/gui/menu.inc/showresourcepanel.inc"
 
-    private static let resourceBackground = #"""
-    section.begin {refurl=.\data\hud\ref\reflibmat.mat}
-       Material.Name = resourcepanel.background
-       Material.LibTextureName = tex03
-       Material.TextureCoord.ImageH = 512
-       Material.TextureCoord.CoordX = 386
-       Material.TextureCoord.CoordY = 183
-       Material.TextureCoord.CoordW = 1159
-       Material.TextureCoord.CoordH = 58
-    section.end
-    """#
-
     private static let resourcePanelOriginal = """
           [*] = ;if ((GetViewerWidth)<1260) then
           [*] = ;dpiscale := GetViewerWidth/1260;
@@ -107,20 +95,20 @@ public enum GameFiles {
           [*] = ;var elm : Integer = _gui_CreateImageActive('resbackground', elmParent, 'resourcepanel.background', gc_halParentMiddle, gc_valParentTop, xoff, cResourceOffY, 0, 0, 0, '', '', True);
     """
 
-    private static let resourcePanelSplit = """
-          [*] = ;var bNotchSplit : Boolean = (((GetViewerWidth/GetViewerHeight)>1.50) and ((GetViewerWidth/GetViewerHeight)<1.58));
-          [*] = ;if (bNotchSplit) and ((GetViewerWidth/dpiscale)<1470) then
-          [*] = ;dpiscale := GetViewerWidth/1470
-          [*] = ;else
+    private static let resourcePanelPatched = """
+          [*] = ;var bNotchBar : Boolean = (((GetViewerWidth/GetViewerHeight)>1.50) and ((GetViewerWidth/GetViewerHeight)<1.58) and (GetDisplayMode<>'dmWindow'));
           [*] = ;if ((GetViewerWidth)<1260) then
           [*] = ;dpiscale := GetViewerWidth/1260;
-          [*] = ;var parentW : Integer = round(GetViewerWidth/dpiscale);
-          [*] = ;var elmParent : Integer = _gui_CreateParent(elmname, 0, gc_halParentLeft, gc_valParentTop, 0, 0, parentW, GetGUITextureHeight('resourcepanel.background'), True);
+          [*] = ;var resPanelBaseH : Integer = GetGUITextureHeight('resourcepanel.background');
+          [*] = ;var notchDropY : Integer = 0;
+          [*] = ;if (bNotchBar) then
+          [*] = ;notchDropY := Max(46, round(GetViewerHeight*0.042/dpiscale));
+          [*] = ;var elmParent : Integer = _gui_CreateParent(elmname, 0, gc_halParentLeft, gc_valParentTop, 0, 0, round(GetViewerWidth/dpiscale), resPanelBaseH+notchDropY, True);
           [*] = ;_gui_AbsScaleByDPI(elmParent);
           [*] = ;_gui_SetAbsScale(elmParent, dpiscale);
           [*] = ;SetGUIElementVisible(elmParent, (gInterface.gamemode<>gc_gamemode_mainmenu));
           [*] = ;var xoff : Integer;
-          [*] = ;if (not bNotchSplit) then
+          [*] = ;if (not bNotchBar) then
           [*] = ;begin
           [*] = ;   if ((GetViewerWidth/basedpiscale)<cminwidth) then
           [*] = ;   xoff := round(-45*dpiscale)
@@ -128,151 +116,225 @@ public enum GameFiles {
           [*] = ;   if ((GetViewerWidth/basedpiscale)<1440) then
           [*] = ;   xoff := -100;
           [*] = ;end;
-          [*] = ;var notchHalfGap : Integer = 0;
-          [*] = ;var notchLeftShift : Integer = 0;
-          [*] = ;var notchRightShift : Integer = 0;
-          [*] = ;if (bNotchSplit) then
+          [*] = ;var elm : Integer = _gui_CreateImageActive('resbackground', elmParent, 'resourcepanel.background', gc_halParentMiddle, gc_valParentTop, xoff, cResourceOffY+notchDropY, 0, 0, 0, '', '', True);
+    """
+
+    private static let resourceTextsOriginal = """
+          [*] = ;   _gui_CreateTextShadowed('resource'+IntToStr(ind), elmParent, text, gc_halParentMiddle, gc_valParentTop, x+xoff, cResourceOffY-4, cResourceSizeX, GetGUIElementHeight(elmParent), gc_halLeft, gc_valMiddle, gc_font_serif_13, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;   if (dpiscale=2) then
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentMiddle, x-160+xoff, cResourceOffY-10, cResourceSizeX-10, GetGUIElementHeight(elmParent), 0, '', hint, True)
+          [*] = ;   else
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentMiddle, x-60+xoff, cResourceOffY-10, cResourceSizeX-10, GetGUIElementHeight(elmParent), 0, '', hint, True);
+    """
+
+    private static let resourceTextsPatched = """
+          [*] = ;   _gui_CreateTextShadowed('resource'+IntToStr(ind), elmParent, text, gc_halParentMiddle, gc_valParentTop, x+xoff, cResourceOffY-4+notchDropY, cResourceSizeX, resPanelBaseH, gc_halLeft, gc_valMiddle, gc_font_serif_13, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;   if (dpiscale=2) then
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentTop, x-160+xoff, cResourceOffY-10+notchDropY, cResourceSizeX-10, resPanelBaseH, 0, '', hint, True)
+          [*] = ;   else
+          [*] = ;   _gui_CreateImageActive('resourcehint'+IntToStr(ind), elmParent, gc_gui_material_blank, gc_halParentMiddle, gc_valParentTop, x-60+xoff, cResourceOffY-10+notchDropY, cResourceSizeX-10, resPanelBaseH, 0, '', hint, True);
+    """
+
+    private static let populationCreateOriginal = """
+          [*] = ;var elmPopulationHnd : Integer = _gui_CreateImageActive('population', elmParent, gc_gui_material_blank, gc_halParentLeft, gc_valParentTop, 0, 5, 142, GetGUIElementHeight(elmParent), 0, '', cTextHintFarm, True);
+    """
+
+    private static let populationCreatePatched = """
+          [*] = ;var elmPopulationHnd : Integer = _gui_CreateImageActive('population', elmParent, gc_gui_material_blank, gc_halParentLeft, gc_valParentTop, 0, 5, 142, resPanelBaseH, 0, '', cTextHintFarm, True);
+    """
+
+    private static let populationAndIdleOriginal = """
+          [*] = ;_gui_CreateTextShadowed('_txt_population', elmPopulationHnd, text, gc_halParentLeft, gc_valParentTop, cPopulationOffsetX, 0, 0, GetGUIElementHeight(elmParent), gc_halLeft, gc_valMiddle, gc_font_sans_12, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;var bObjectivesExists : Boolean;
+          [*] = ;if (gScenario.bactive) then
           [*] = ;begin
-          [*] = ;   notchHalfGap := round(parentW*0.068);
-          [*] = ;   notchLeftShift := -notchHalfGap-31;
-          [*] = ;   notchRightShift := notchHalfGap-31;
+          [*] = ;   var i : Integer;
+          [*] = ;   for i:=0 to gc_scenario_maxobjectives-1 do
+          [*] = ;   if (gScenario.objectives[i].bvisible) then
+          [*] = ;   begin
+          [*] = ;      bObjectivesExists := True;
+          [*] = ;      break;
+          [*] = ;   end;
           [*] = ;end;
-          [*] = ;var elmL : Integer = _gui_CreateImageActive('resbackground_l', elmParent, 'resourcepanel.background.left', gc_halParentMiddle, gc_valParentTop, xoff-275+notchLeftShift, cResourceOffY, 0, 0, 0, '', '', True);
-          [*] = ;var elmR : Integer = _gui_CreateImageActive('resbackground_r', elmParent, 'resourcepanel.background.right', gc_halParentMiddle, gc_valParentTop, xoff+305+notchRightShift, cResourceOffY, 0, 0, 0, '', '', True);
+          [*] = ;
+          [*] = ;var posY : Integer;
+          [*] = ;if (bObjectivesExists) then
+          [*] = ;posY := 50;
     """
 
-    private static let resourceOffsetsOriginal = """
-          [*] = ;   const cSideOffsetX = -10;
-          [*] = ;   if (i<4) then
-          [*] = ;   x := x+(cSideOffsetX div 2)
+    private static let populationAndIdlePatched = """
+          [*] = ;_gui_CreateTextShadowed('_txt_population', elmPopulationHnd, text, gc_halParentLeft, gc_valParentTop, cPopulationOffsetX, 0, 0, resPanelBaseH, gc_halLeft, gc_valMiddle, gc_font_sans_12, color, 1, 1, shcolor, True);
+          [*] = ;
+          [*] = ;var bObjectivesExists : Boolean;
+          [*] = ;if (gScenario.bactive) then
+          [*] = ;begin
+          [*] = ;   var i : Integer;
+          [*] = ;   for i:=0 to gc_scenario_maxobjectives-1 do
+          [*] = ;   if (gScenario.objectives[i].bvisible) then
+          [*] = ;   begin
+          [*] = ;      bObjectivesExists := True;
+          [*] = ;      break;
+          [*] = ;   end;
+          [*] = ;end;
+          [*] = ;
+          [*] = ;var posY : Integer = notchDropY;
+          [*] = ;if (bObjectivesExists) then
+          [*] = ;posY := posY+50;
+    """
+
+    private static let objectivesOriginal = """
+          [*] = ;var elmObjectives : Integer = _gui_CreateParent('objs', elmParent, gc_halParentLeft, gc_valParentTop, 54+5+cpadding-8, 66+cpadding-8, 0, 0, True);
+          [*] = ;if (bPaper) then
+          [*] = ;elmObjectivesBackground := _gui_CreateParent('bcg', elmObjectives, gc_halParentLeft, gc_valParentTop, 0, 0, 0, 0, True);
+          [*] = ;//SetGUIElementUserBlend(elmObjectives, 1);
+          [*] = ;if (gScenario.bactive) then
+          [*] = ;begin
+          [*] = ;   var listid : TIntegerList;
+          [*] = ;   var listgametime : TIntegerList;
+          [*] = ;   var material : String;
+          [*] = ;   if (not bObjectivesExists) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectivesDisabled;
+          [*] = ;   end
           [*] = ;   else
-          [*] = ;   x := x+cSideOffsetX+4;
-    """
-
-    private static let resourceOffsetsSplit = """
-          [*] = ;   const cSideOffsetX = -10;
-          [*] = ;   if (i<4) then
-          [*] = ;   x := x+(cSideOffsetX div 2)+notchLeftShift
+          [*] = ;   if (not gInterface.bhideobjectives) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'hideobjectives';
+          [*] = ;      hint := cTextHideObjectives;
+          [*] = ;   end
           [*] = ;   else
-          [*] = ;   x := x+cSideOffsetX+4+notchRightShift;
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectives;
+          [*] = ;   end;
+          [*] = ;   var elmSwitchShowObjectivesHnd : Integer = _gui_CreateImage('_img_switchobjectives', elmParent, material, gc_halParentLeft, gc_valParentTop, 3, 64{+50+50}, 0, 0, 0, True);
     """
 
-    /// Validate both originals before touching either file; backups are only reused when `target` still matches
-    /// either the backup or our previously installed patch (recorded in `.steppe-audio-installed.json`), so a
-    /// Steam update or a user-modified file is never overwritten by a stale backup.
+    private static let objectivesPatched = """
+          [*] = ;var elmObjectives : Integer = _gui_CreateParent('objs', elmParent, gc_halParentLeft, gc_valParentTop, 54+5+cpadding-8, 66+cpadding-8+notchDropY, 0, 0, True);
+          [*] = ;if (bPaper) then
+          [*] = ;elmObjectivesBackground := _gui_CreateParent('bcg', elmObjectives, gc_halParentLeft, gc_valParentTop, 0, 0, 0, 0, True);
+          [*] = ;//SetGUIElementUserBlend(elmObjectives, 1);
+          [*] = ;if (gScenario.bactive) then
+          [*] = ;begin
+          [*] = ;   var listid : TIntegerList;
+          [*] = ;   var listgametime : TIntegerList;
+          [*] = ;   var material : String;
+          [*] = ;   if (not bObjectivesExists) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectivesDisabled;
+          [*] = ;   end
+          [*] = ;   else
+          [*] = ;   if (not gInterface.bhideobjectives) then
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'hideobjectives';
+          [*] = ;      hint := cTextHideObjectives;
+          [*] = ;   end
+          [*] = ;   else
+          [*] = ;   begin
+          [*] = ;      material := gc_hud_icons_control+'showobjectives';
+          [*] = ;      hint := cTextShowObjectives;
+          [*] = ;   end;
+          [*] = ;   var elmSwitchShowObjectivesHnd : Integer = _gui_CreateImage('_img_switchobjectives', elmParent, material, gc_halParentLeft, gc_valParentTop, 3, 64+notchDropY{+50+50}, 0, 0, 0, True);
+    """
+
+    /// On notched MacBooks, lowers the centered 6-resource bar (`showresourcepanel.inc`) just below the camera notch
+    /// while keeping Population (top-left) and Game Menu (top-right) in the auxiliary top areas beside the notch.
+    /// Also restores any legacy `hud.mat.steppe-orig` backup if present.
     public static func applyNotchHUD(in gameDir: URL, enabled: Bool) -> [Status] {
         let fm = FileManager.default
-        let paths = [hudMatRelativePath, resourcePanelRelativePath]
         var record = readInstalledRecord(in: gameDir)
+        defer { writeInstalledRecord(record, in: gameDir) }
+
+        // Always restore any legacy hud.mat.steppe-orig from v0.1.6 so hud.mat stays 100% original.
+        let hudTarget = gameDir.appendingPathComponent(hudMatRelativePath)
+        let hudBackup = hudTarget.appendingPathExtension("steppe-orig")
+        if fm.fileExists(atPath: hudBackup.path) {
+            let currentHash = try? Hashing.sha256(of: hudTarget)
+            let backupHash = try? Hashing.sha256(of: hudBackup)
+            if let currentHash, currentHash != record[hudMatRelativePath], currentHash != backupHash {
+                try? fm.removeItem(at: hudBackup)
+            } else {
+                _ = try? replaceFile(at: hudTarget, with: hudBackup)
+            }
+            record.removeValue(forKey: hudMatRelativePath)
+        }
+
+        let path = resourcePanelRelativePath
+        let target = gameDir.appendingPathComponent(path)
+        let backup = target.appendingPathExtension("steppe-orig")
+
         if !enabled {
-            defer { writeInstalledRecord(record, in: gameDir) }
-            return paths.map { path in
-                let target = gameDir.appendingPathComponent(path)
-                let backup = target.appendingPathExtension("steppe-orig")
-                guard fm.fileExists(atPath: backup.path) else { return .alreadyCurrent(path) }
-                let currentHash = try? Hashing.sha256(of: target)
-                let backupHash = try? Hashing.sha256(of: backup)
-                // Only restore if target is still our patched file (or identical to backup). If Steam updated target,
-                // discard the stale backup and keep the new target untouched.
-                if let currentHash, currentHash != record[path], currentHash != backupHash {
-                    try? fm.removeItem(at: backup)
-                    record.removeValue(forKey: path)
-                    return .alreadyCurrent(path)
-                }
-                do {
-                    try replaceFile(at: target, with: backup)
-                    record.removeValue(forKey: path)
-                    return .installed(path)
-                } catch {
-                    Log.shared.error("Could not restore \(path): \(error.localizedDescription)")
-                    return .skippedUnknownFile(path)
-                }
+            guard fm.fileExists(atPath: backup.path) else { return [.alreadyCurrent(path)] }
+            let currentHash = try? Hashing.sha256(of: target)
+            let backupHash = try? Hashing.sha256(of: backup)
+            if let currentHash, currentHash != record[path], currentHash != backupHash {
+                try? fm.removeItem(at: backup)
+                record.removeValue(forKey: path)
+                return [.alreadyCurrent(path)]
             }
-        }
-
-        // The 1159px resource bar texture has its asymmetric center between Stone (slot 3) and Gold (slot 4) at x=610
-        // (+30.5px right of the 579.5px texture midpoint), hence the -31px centering offset on both halves.
-        let left = resourceBackground
-            .replacingOccurrences(of: "resourcepanel.background", with: "resourcepanel.background.left")
-            .replacingOccurrences(of: "CoordW = 1159", with: "CoordW = 610")
-        let right = resourceBackground
-            .replacingOccurrences(of: "resourcepanel.background", with: "resourcepanel.background.right")
-            .replacingOccurrences(of: "CoordX = 386", with: "CoordX = 996")
-            .replacingOccurrences(of: "CoordW = 1159", with: "CoordW = 549")
-        let replacements = [
-            [(resourceBackground, [resourceBackground, left, right].joined(separator: "\n"))],
-            [(resourcePanelOriginal, resourcePanelSplit), (resourceOffsetsOriginal, resourceOffsetsSplit)],
-        ]
-        var patchedFiles: [Data] = []
-        var refreshBackup = [false, false]
-        for (index, path) in paths.enumerated() {
-            let target = gameDir.appendingPathComponent(path)
-            let backup = target.appendingPathExtension("steppe-orig")
-            guard fm.fileExists(atPath: target.path), let currentHash = try? Hashing.sha256(of: target) else {
-                return [.missing(path)]
-            }
-            let hasValidBackup = fm.fileExists(atPath: backup.path)
-                && (currentHash == record[path] || currentHash == (try? Hashing.sha256(of: backup)))
-            let base = hasValidBackup ? backup : target
-            refreshBackup[index] = !hasValidBackup
-            guard let data = try? Data(contentsOf: base),
-                  var content = String(data: data, encoding: .isoLatin1) else {
-                return [.skippedUnknownFile(path)]
-            }
-            if index == 0, content.contains("Material.Name = resourcepanel.background.left")
-                || content.contains("Material.Name = resourcepanel.background.right") {
-                return [.skippedUnknownFile(path)]
-            }
-            let newline = content.contains("\r\n") ? "\r\n" : "\n"
-            for (original, replacement) in replacements[index] {
-                let expected = original.replacingOccurrences(of: "\n", with: newline)
-                guard content.components(separatedBy: expected).count == 2 else {
-                    return [.skippedUnknownFile(path)]
-                }
-                content = content.replacingOccurrences(of: expected, with: replacement.replacingOccurrences(of: "\n", with: newline))
-            }
-            guard let patched = content.data(using: .isoLatin1) else { return [.skippedUnknownFile(path)] }
-            patchedFiles.append(patched)
-        }
-
-        var statuses: [Status] = []
-        for (index, path) in paths.enumerated() {
-            let target = gameDir.appendingPathComponent(path)
-            let backup = target.appendingPathExtension("steppe-orig")
-            let patchedHash = Hashing.sha256(of: patchedFiles[index])
-            if !refreshBackup[index], fm.fileExists(atPath: backup.path), (try? Data(contentsOf: target)) == patchedFiles[index] {
-                record[path] = patchedHash
-                statuses.append(.alreadyCurrent(path))
-                continue
-            }
-            let staged = target.appendingPathExtension("steppe-new-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: staged) }
             do {
-                if refreshBackup[index] || !fm.fileExists(atPath: backup.path) {
-                    try? fm.removeItem(at: backup)
-                    try fm.copyItem(at: target, to: backup)
-                }
-                try patchedFiles[index].write(to: staged)
-                try replaceFile(at: target, with: staged)
-                record[path] = patchedHash
-                statuses.append(.installed(path))
+                try replaceFile(at: target, with: backup)
+                record.removeValue(forKey: path)
+                return [.installed(path)]
             } catch {
-                Log.shared.error("Could not patch \(path): \(error.localizedDescription)")
-                // Roll back any earlier file patched in this call so hud.mat and showresourcepanel.inc stay consistent.
-                for prevIndex in 0..<index {
-                    let prevPath = paths[prevIndex]
-                    let prevTarget = gameDir.appendingPathComponent(prevPath)
-                    let prevBackup = prevTarget.appendingPathExtension("steppe-orig")
-                    if fm.fileExists(atPath: prevBackup.path), (try? replaceFile(at: prevTarget, with: prevBackup)) != nil {
-                        record.removeValue(forKey: prevPath)
-                    }
-                }
-                writeInstalledRecord(record, in: gameDir)
+                Log.shared.error("Could not restore \(path): \(error.localizedDescription)")
                 return [.skippedUnknownFile(path)]
             }
         }
-        writeInstalledRecord(record, in: gameDir)
-        return statuses
+
+        guard fm.fileExists(atPath: target.path), let currentHash = try? Hashing.sha256(of: target) else {
+            return [.missing(path)]
+        }
+        let hasValidBackup = fm.fileExists(atPath: backup.path)
+            && (currentHash == record[path] || currentHash == (try? Hashing.sha256(of: backup)))
+        let base = hasValidBackup ? backup : target
+        let refreshBackup = !hasValidBackup
+        guard let data = try? Data(contentsOf: base),
+              var content = String(data: data, encoding: .isoLatin1) else {
+            return [.skippedUnknownFile(path)]
+        }
+        let newline = content.contains("\r\n") ? "\r\n" : "\n"
+        let replacements = [
+            (resourcePanelOriginal, resourcePanelPatched),
+            (resourceTextsOriginal, resourceTextsPatched),
+            (populationCreateOriginal, populationCreatePatched),
+            (populationAndIdleOriginal, populationAndIdlePatched),
+            (objectivesOriginal, objectivesPatched),
+        ]
+        for (original, replacement) in replacements {
+            let expected = original.replacingOccurrences(of: "\n", with: newline)
+            guard content.components(separatedBy: expected).count == 2 else {
+                return [.skippedUnknownFile(path)]
+            }
+            content = content.replacingOccurrences(of: expected, with: replacement.replacingOccurrences(of: "\n", with: newline))
+        }
+        guard let patched = content.data(using: .isoLatin1) else { return [.skippedUnknownFile(path)] }
+        let patchedHash = Hashing.sha256(of: patched)
+        if !refreshBackup, fm.fileExists(atPath: backup.path), (try? Data(contentsOf: target)) == patched {
+            record[path] = patchedHash
+            return [.alreadyCurrent(path)]
+        }
+        let staged = target.appendingPathExtension("steppe-new-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: staged) }
+        do {
+            if refreshBackup || !fm.fileExists(atPath: backup.path) {
+                try? fm.removeItem(at: backup)
+                try fm.copyItem(at: target, to: backup)
+            }
+            try patched.write(to: staged)
+            try replaceFile(at: target, with: staged)
+            record[path] = patchedHash
+            return [.installed(path)]
+        } catch {
+            Log.shared.error("Could not patch \(path): \(error.localizedDescription)")
+            return [.skippedUnknownFile(path)]
+        }
     }
 
     /// Puts the original libraries and HUD files back (used by "Restore original game files").

@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.7]
+
+### Fixed
+- Refined MacBook camera notch HUD layout (`GameFiles.applyNotchHUD`): instead of splitting the top resource bar horizontally at `y = 0` (where the left half could overlap long localized Population strings such as Turkish `"18 üzerinden 0"` on 14″ MacBooks), Steppe now keeps **Population** (top-left) and **Game Menu** (top-right) in the auxiliary areas beside the notch and lowers the complete, unbroken 6-resource bar (`1159×58`) cleanly below the camera notch (`notchDropY = Max(46, round(GetViewerHeight * 0.042 / dpiscale))`), while leaving `data/hud/hud.mat`, windowed mode, and non-notched displays completely untouched.
+
 ## [0.1.6]
 
 ### Added

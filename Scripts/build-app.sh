@@ -95,9 +95,12 @@ codesign --verify --deep --strict "$APP"
 
 echo "==> Checks"
 lipo -info "$APP/Contents/MacOS/Steppe"
-if strings -a "$APP/Contents/MacOS/Steppe" | grep -q -E "/Users/[A-Za-z0-9_.-]+/"; then
+# No `grep -q` here: it stops reading at the first match, `strings` then dies of SIGPIPE, and under pipefail
+# the pipeline would count as "no match", exactly when there is one.
+HOME_PATHS="$(strings -a "$APP/Contents/MacOS/Steppe" | grep -E "/Users/[A-Za-z0-9_.-]+/" || true)"
+if [ -n "$HOME_PATHS" ]; then
     echo "WARNING: the executable still contains a home-directory path:"
-    strings -a "$APP/Contents/MacOS/Steppe" | grep -E "/Users/[A-Za-z0-9_.-]+/" | head -3
+    printf '%s\n' "$HOME_PATHS" | head -3
     exit 1
 fi
 echo "Built $APP (version $VERSION, build $BUILD)"

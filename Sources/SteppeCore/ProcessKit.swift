@@ -26,19 +26,37 @@ public enum ProcessFailure: Error, LocalizedError {
 private final class Accumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()
-    func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
-    func text() -> String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
+    private var sealed = false
+    private var reachedEOF = false
+    func append(_ chunk: Data) { lock.lock(); if !sealed { data.append(chunk) }; lock.unlock() }
+    /// Returns the captured text and frees it; anything that arrives later is dropped. The reader can live on
+    /// for as long as a descendant keeps the pipe open, so it must not keep the output alive with it.
+    func seal() -> String {
+        lock.lock(); defer { lock.unlock() }
+        sealed = true
+        let text = String(decoding: data, as: UTF8.self)
+        data = Data()
+        return text
+    }
+    /// True the first time only, so end-of-file is counted once.
+    func markEOF() -> Bool { lock.lock(); defer { lock.unlock() }; if reachedEOF { return false }; reachedEOF = true; return true }
 }
 
 public enum ProcessRunner {
-    /// Runs a command to completion. Output is captured; the process is killed on timeout or task cancellation.
+    /// Runs a command to completion. Output is captured; on timeout or task cancellation the process is killed
+    /// and the call throws `ProcessFailure.timedOut` or `CancellationError`, never the exit status of the kill.
+    ///
+    /// Descendants that outlive the command (wineserver and Wine's services inherit its pipes) keep the pipes open.
+    /// After the command exits its output is awaited for at most `outputDrainGrace` seconds, and not at all once
+    /// it timed out or was cancelled, so such a descendant can never hold this call hostage.
     @discardableResult
     public static func run(
         _ executable: URL,
         arguments: [String] = [],
         environment: [String: String]? = nil,
         currentDirectory: URL? = nil,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        outputDrainGrace: TimeInterval = 15
     ) async throws -> CommandResult {
         let process = Process()
         process.executableURL = executable
@@ -50,42 +68,59 @@ public enum ProcessRunner {
         process.standardOutput = outPipe
         process.standardError = errPipe
         process.standardInput = FileHandle.nullDevice
-        let out = Accumulator(), err = Accumulator()
-        outPipe.fileHandleForReading.readabilityHandler = { out.append($0.availableData) }
-        errPipe.fileHandleForReading.readabilityHandler = { err.append($0.availableData) }
 
         let label = executable.lastPathComponent
-        let timedOut = TimeoutFlag()
+        let timedOut = Flag(), cancelled = Flag()
         // A task that was cancelled before we got here must not start anything.
-        if Task.isCancelled {
-            outPipe.fileHandleForReading.readabilityHandler = nil
-            errPipe.fileHandleForReading.readabilityHandler = nil
-            throw CancellationError()
+        if Task.isCancelled { throw CancellationError() }
+
+        let out = Accumulator(), err = Accumulator()
+        let streams = [(outPipe, out), (errPipe, err)]
+        let drained = DispatchGroup()
+        @Sendable func stopReading(_ pipe: Pipe, _ accumulator: Accumulator) {
+            pipe.fileHandleForReading.readabilityHandler = nil
+            if accumulator.markEOF() { drained.leave() }
+        }
+        for (pipe, accumulator) in streams {
+            drained.enter()
+            // Capturing the pipe keeps it open until end-of-file, also after this call has returned: a descendant
+            // that still writes to it must not meet a closed pipe.
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty { stopReading(pipe, accumulator) } else { accumulator.append(chunk) }
+            }
         }
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
                 process.terminationHandler = { proc in
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    errPipe.fileHandleForReading.readabilityHandler = nil
-                    out.append(outPipe.fileHandleForReading.readDataToEndOfFile())
-                    err.append(errPipe.fileHandleForReading.readDataToEndOfFile())
-                    if timedOut.value {
-                        continuation.resume(throwing: ProcessFailure.timedOut(label))
-                    } else {
-                        continuation.resume(returning: CommandResult(exitCode: proc.terminationStatus, stdout: out.text(), stderr: err.text()))
+                    DispatchQueue.global().async {
+                        let deadline = Date().addingTimeInterval(outputDrainGrace)
+                        while drained.wait(timeout: .now() + 0.05) == .timedOut {
+                            if timedOut.value || cancelled.value || Date() >= deadline { break }
+                        }
+                        let stdout = out.seal(), stderr = err.seal()
+                        if timedOut.value {
+                            continuation.resume(throwing: ProcessFailure.timedOut(label))
+                        } else if cancelled.value {
+                            continuation.resume(throwing: CancellationError())
+                        } else {
+                            continuation.resume(returning: CommandResult(exitCode: proc.terminationStatus, stdout: stdout, stderr: stderr))
+                        }
                     }
                 }
                 do {
                     try process.run()
                 } catch {
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    errPipe.fileHandleForReading.readabilityHandler = nil
+                    for (pipe, accumulator) in streams { stopReading(pipe, accumulator) }
                     continuation.resume(throwing: ProcessFailure.launchFailed("\(label): \(error.localizedDescription)"))
                     return
                 }
                 // Cancellation can arrive between the check above and `run()`; stop the fresh process right away.
-                if Task.isCancelled { Self.stop(process) }
+                if Task.isCancelled {
+                    cancelled.set()
+                    Self.stop(process)
+                }
                 if let timeout {
                     DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
                         guard process.isRunning else { return }
@@ -98,6 +133,7 @@ public enum ProcessRunner {
                 }
             }
         } onCancel: {
+            cancelled.set()
             Self.stop(process)
         }
     }
@@ -128,7 +164,7 @@ public enum ProcessRunner {
     }
 }
 
-private final class TimeoutFlag: @unchecked Sendable {
+private final class Flag: @unchecked Sendable {
     private let lock = NSLock()
     private var flag = false
     var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
@@ -178,8 +214,14 @@ public enum ProcessScanner {
     /// Processes started from our Wine engine. Wine rewrites the process title of its children, so the
     /// environment is not visible; the executable path is what reliably tells them apart from other Wine installs.
     public static func processes(inEngine bundle: URL) async -> [RunningProcess] {
-        // proc_pidpath reports the canonical path, so match the symlink-resolved bundle path too.
-        let prefixes = [bundle.path, bundle.resolvingSymlinksInPath().path].map { $0.precomposedStringWithCanonicalMapping + "/" }
+        // proc_pidpath reports the canonical path, so match the symlink-resolved bundle path too. `realpath` is
+        // needed as well: `resolvingSymlinksInPath` drops the /private prefix the kernel reports for /var and /tmp.
+        var candidates = [bundle.path, bundle.resolvingSymlinksInPath().path]
+        if let real = realpath(bundle.path, nil) {
+            candidates.append(String(cString: real))
+            free(real)
+        }
+        let prefixes = candidates.map { $0.precomposedStringWithCanonicalMapping + "/" }
         let me = getpid()
         return await list().filter { process in
             guard process.pid != me, let path = executablePath(of: process.pid) else { return false }

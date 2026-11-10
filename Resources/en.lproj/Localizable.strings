@@ -148,6 +148,7 @@
 "This Mac can't run Steppe" = "This Mac can't run Steppe";
 "Try Again" = "Try Again";
 "Uninstall" = "Uninstall";
+"Uninstall could not delete everything: %@" = "Uninstall could not delete everything: %@";
 "Uninstall everything?" = "Uninstall everything?";
 "Uninstall Everything…" = "Uninstall Everything…";
 "Unpacking" = "Unpacking";

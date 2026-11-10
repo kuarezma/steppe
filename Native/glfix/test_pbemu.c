@@ -53,6 +53,29 @@ int main(int argc, char **argv) {
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
   printf("texel0 = %u %u %u %u\n", px[0], px[1], px[2], px[3]);
   CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255, "texture holds pbuffer contents (red)");
+  // Pixel-store state the game left behind must not skew or overflow the copy, and must survive it.
+  // The texture is blanked first, so the red checked below can only come from this second copy.
+  static const unsigned char blank[64 * 64 * 4];
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, blank);
+  CGLSetCurrentContext(a);
+  glPixelStorei(GL_PACK_ROW_LENGTH, 128); glPixelStorei(GL_PACK_SKIP_ROWS, 3);
+  CGLSetCurrentContext(b);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 128); glPixelStorei(GL_UNPACK_SKIP_PIXELS, 5);
+  CHECK(CGLTexImagePBuffer(b, pb, GL_FRONT_LEFT) == kCGLNoError, "teximage pbuffer with foreign pixel-store state");
+  GLint urow = 0, uskip = 0; glGetIntegerv(GL_UNPACK_ROW_LENGTH, &urow); glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &uskip);
+  CHECK(urow == 128 && uskip == 5, "unpack state of the destination context is restored");
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0); glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  unsigned char px2[64 * 64 * 4] = {0};
+  glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px2);
+  const unsigned char *row1 = px2 + 64 * 4, *last = px2 + sizeof px2 - 4;
+  CHECK(row1[0] == 255 && row1[1] == 0 && row1[3] == 255 && last[0] == 255 && last[1] == 0 && last[3] == 255,
+        "every row of the copy is tightly packed (red)");
+  CGLSetCurrentContext(a);
+  GLint prow = 0, pskip = 0, palign = 0;
+  glGetIntegerv(GL_PACK_ROW_LENGTH, &prow); glGetIntegerv(GL_PACK_SKIP_ROWS, &pskip); glGetIntegerv(GL_PACK_ALIGNMENT, &palign);
+  CHECK(prow == 128 && pskip == 3 && palign == 4, "pack state of the pbuffer context is restored");
+  glPixelStorei(GL_PACK_ROW_LENGTH, 0); glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+  CGLSetCurrentContext(b);
   CHECK(CGLTexImagePBuffer(b, pb, GL_NONE) == kCGLNoError, "release teximage");
   CGLReleasePBuffer(pb); CHECK(1, "release pbuffer");
   int recycled = 0;

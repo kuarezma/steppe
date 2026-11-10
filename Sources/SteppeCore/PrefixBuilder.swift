@@ -47,8 +47,7 @@ public enum PrefixBuilder {
     public static func create(runner: WineRunner, environment: [String: String]) async throws {
         let paths = runner.paths
         let fm = FileManager.default
-        if hasUserData(paths: paths) { throw PrefixError.refusingToDeleteGameData }
-        try? fm.removeItem(at: paths.prefixDir)
+        try clearForCreation(paths: paths)
         try fm.createDirectory(at: paths.prefixDir, withIntermediateDirectories: true)
 
         var env = environment
@@ -100,6 +99,36 @@ public enum PrefixBuilder {
     public static func needsUpdate(paths: SteppePaths) -> Bool {
         guard let marker = ComponentMarker.read(paths.prefixMarker) else { return false }
         return marker.checksum != RuntimeManifest.current.engine.sha256 || marker.patchRevision != RuntimeManifest.current.patchRevision
+    }
+
+    /// Makes room for a new prefix without losing anything the player made. An incomplete prefix is deleted;
+    /// one that holds game profiles or saves is moved aside (returned), next to where the new one is created.
+    @discardableResult
+    static func clearForCreation(paths: SteppePaths) throws -> URL? {
+        let fm = FileManager.default
+        if hasUserData(paths: paths) { throw PrefixError.refusingToDeleteGameData }
+        guard fm.fileExists(atPath: paths.prefixDir.path) else { return nil }
+        guard hasGameDocuments(paths: paths) else {
+            try fm.removeItem(at: paths.prefixDir)
+            return nil
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let aside = paths.prefixDir.deletingLastPathComponent()
+            .appendingPathComponent("\(paths.prefixDir.lastPathComponent).damaged-\(stamp)-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try fm.moveItem(at: paths.prefixDir, to: aside)
+        Log.shared.warn("The damaged Windows environment contained game documents; kept as \(aside.lastPathComponent)")
+        return aside
+    }
+
+    /// The game's own documents folder (profiles, saves) of any Windows user in the prefix has content.
+    static func hasGameDocuments(paths: SteppePaths) -> Bool {
+        let fm = FileManager.default
+        let users = paths.driveC.appendingPathComponent("users", isDirectory: true)
+        for user in (try? fm.contentsOfDirectory(atPath: users.path)) ?? [] {
+            let documents = users.appendingPathComponent(user).appendingPathComponent("Documents/cossacks")
+            if let entries = try? fm.contentsOfDirectory(atPath: documents.path), !entries.isEmpty { return true }
+        }
+        return false
     }
 
     /// Anything the user would lose by deleting the prefix: an installed Steam library or game.

@@ -61,11 +61,17 @@ public final class SteppeController: ObservableObject {
     private var installLock: InstallLock?
     /// True while uninstalling, so nothing new can start underneath the deletion.
     private var isMaintaining = false
+    /// A Force Quit that is still stopping processes: anything launched now would be killed with them.
+    private var stopTask: Task<Void, Never>?
+    var isStopping: Bool { stopTask != nil }
     private var speedSample: (time: Date, bytes: Int64)?
     private let defaults: UserDefaults
     private var settingsLoaded = false
     /// Steam needs a few seconds before its processes show up; until then it counts as running.
     private var steamLaunchGraceUntil = Date.distantPast
+    /// Counts started operations (setup, launch, uninstall), so a `refresh` can tell that what it found on disk
+    /// predates one, even when that operation has already finished again.
+    private var operationGeneration = 0
     private static let rootDefaultsKey = "installRoot"
 
     public init(nativeDir: URL?, defaults: UserDefaults = .standard, rootOverride: URL? = nil) {
@@ -115,7 +121,10 @@ public final class SteppeController: ObservableObject {
         microphoneStatus = MicrophonePermission.status()
         await loadSettingsIfNeeded()
         let root = paths.root
-        freeBytes = await Task.detached { SystemInfo.freeBytes(at: root) }.value
+        let free = await Task.detached { SystemInfo.freeBytes(at: root) }.value
+        // The install location changed while the disk was being checked; the refresh for the new one reports.
+        guard paths.root == root else { return }
+        freeBytes = free
         requiredFreeBytesNow = FileManager.default.fileExists(atPath: paths.engineMarker.path)
             ? Self.requiredFreeBytesAfterEngine : Self.requiredFreeBytes
         hasCheckedDisk = true
@@ -123,10 +132,24 @@ public final class SteppeController: ObservableObject {
             phase = .unsupported(reason)
             return
         }
-        if setupTask != nil || playTask != nil { return }
-        if await isEverythingReady() {
+        if isBusy { return }
+        let generation = operationGeneration
+        let ready = await isEverythingReady()
+        let gameRunning = ready ? await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) : false
+        guard paths.root == root, operationGeneration == generation else { return }
+        applyRefresh(ready: ready, gameRunning: gameRunning)
+    }
+
+    /// A setup, a launch, a Force Quit or an uninstall owns `phase` while it runs.
+    private var isBusy: Bool { setupTask != nil || playTask != nil || isMaintaining || isStopping }
+
+    /// Shows the screen that matches what `refresh` found on disk.
+    func applyRefresh(ready: Bool, gameRunning: Bool) {
+        // The checks in `refresh` suspend, so an operation can have started since they began.
+        guard !isBusy else { return }
+        if ready {
             markAllDone()
-            if await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) {
+            if gameRunning {
                 attachToRunningGame()
             } else {
                 phase = .ready
@@ -148,6 +171,9 @@ public final class SteppeController: ObservableObject {
         guard !settingsLoaded else { return }
         let url = paths.settingsFile
         let loaded = await Task.detached { AppSettings.load(from: url) }.value
+        // Another refresh loaded them meanwhile, or the install location changed: assigning now would write
+        // these settings over the current ones.
+        guard !settingsLoaded, paths.settingsFile == url else { return }
         settings = loaded
         settingsLoaded = true
     }
@@ -195,13 +221,14 @@ public final class SteppeController: ObservableObject {
     }
 
     private func releaseLockIfIdle() {
-        if setupTask == nil && playTask == nil && !isMaintaining { installLock = nil }
+        if !isBusy { installLock = nil }
     }
 
     // MARK: - Setup
 
     public func startSetup() {
-        guard setupTask == nil, playTask == nil, !isMaintaining, isSupportedMac, acquireLock() else { return }
+        guard !isBusy, isSupportedMac, acquireLock() else { return }
+        operationGeneration += 1
         phase = .settingUp
         for stage in SetupStage.allCases where stages[stage] != .done { stages[stage] = .pending }
         setupTask = Task { [weak self] in
@@ -226,13 +253,13 @@ public final class SteppeController: ObservableObject {
             try await ensurePrefix()
             try await ensureSteamClient()
             try await ensureSignInAndGame()
-            await steam.shutdown(environment: environment.setup())
+            await shutDownSteam()
             phase = .ready
             lastSessionNote = nil
             Log.shared.info("Setup complete")
         } catch is CancellationError {
             Log.shared.info("Setup cancelled")
-            await steam.shutdown(environment: environment.setup())
+            await shutDownSteam()
             phase = .needsSetup
         } catch {
             Log.shared.error("Setup failed: \(error.localizedDescription)")
@@ -421,6 +448,7 @@ public final class SteppeController: ObservableObject {
         if !(await kit.isClientRunning()) {
             set(.signIn, .running(progress: nil, detail: L("Starting Steam")))
             await prepareMicrophoneAndEngineForSteam()
+            try Task.checkCancellation()
             steamLaunchGraceUntil = Date().addingTimeInterval(25)
             try kit.launchClient(environment: env, logName: "steam-setup.log")
         }
@@ -473,6 +501,8 @@ public final class SteppeController: ObservableObject {
 
     private func download(_ item: RuntimeManifest.Download, to destination: URL, stage: SetupStage, label: String, share: Double) async throws {
         speedSample = nil
+        downloadSpeed = 0
+        defer { downloadSpeed = 0 }
         set(stage, .running(progress: 0, detail: label))
         try await Downloader.download(url: item.url, to: destination, expectedSHA256: item.sha256, expectedSize: item.sizeBytes) { [weak self] p in
             Task { @MainActor in
@@ -501,7 +531,8 @@ public final class SteppeController: ObservableObject {
     // MARK: - Playing
 
     public func play() {
-        guard case .ready = phase, playTask == nil, !isMaintaining, acquireLock() else { return }
+        guard case .ready = phase, !isBusy, acquireLock() else { return }
+        operationGeneration += 1
         phase = .playing(L("Preparing"))
         playTask = Task { [weak self] in
             await self?.runPlay()
@@ -545,6 +576,8 @@ public final class SteppeController: ObservableObject {
             try? FileManager.default.removeItem(at: paths.patchLogFile)
             phase = .playing(L("Starting Steam"))
             await prepareMicrophoneAndEngineForSteam()
+            // The microphone prompt can stay open for a long time; a Force Quit meanwhile must not launch anything.
+            try Task.checkCancellation()
             try kit.launchClient(arguments: ["-applaunch", String(manifest.steam.appID)], environment: environment.game(settings: settings), logName: "game-session.log")
             Log.shared.info("Launched at \(resolution); speed libraries: \(speedStatus)")
             startDialogHelper()
@@ -563,14 +596,36 @@ public final class SteppeController: ObservableObject {
             while await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
             }
+            // A cancelled task cannot scan processes: the loop ends as if the game had quit.
+            try Task.checkCancellation()
             let runDuration = Date().timeIntervalSince(runStarted)
             await finishSession(resolution: resolution, runDuration: runDuration)
+        } catch is CancellationError {
+            // Force Quit or an uninstall, not a failure: nothing to report to the player.
+            Log.shared.info("Play cancelled")
+            await stopPrefix()
+            lastSessionNote = nil
+            // A Force Quit shows Ready itself, once everything it stops is gone.
+            if !isStopping { phase = .ready }
         } catch {
             Log.shared.error("Play failed: \(error.localizedDescription)")
-            await steam.shutdown(environment: environment.setup())
+            await shutDownSteam()
             lastSessionNote = error.localizedDescription
             phase = .ready
         }
+    }
+
+    /// Closes Steam and everything else in the prefix, also on behalf of a cancelled task: run inside one,
+    /// every process call and wait of the shutdown would return at once and leave Steam running.
+    func shutDownSteam() async {
+        let kit = steam, setupEnvironment = environment.setup()
+        await Task.detached { await kit.shutdown(environment: setupEnvironment) }.value
+    }
+
+    /// Stops every process of the prefix at once, without Steam's own shutdown; also on behalf of a cancelled task.
+    private func stopPrefix() async {
+        let runner = runner, setupEnvironment = environment.setup()
+        await Task.detached { await runner.killAll(environment: setupEnvironment) }.value
     }
 
     private func attachToRunningGame() {
@@ -580,8 +635,11 @@ public final class SteppeController: ObservableObject {
             guard let self else { return }
             defer { self.playTask = nil }
             while await ProcessScanner.isGameRunning(inEngine: self.paths.wineBundle) {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                // Whoever cancelled (Force Quit, uninstall) stops the game and decides what is shown next.
+                guard (try? await Task.sleep(nanoseconds: 2_000_000_000)) != nil else { return }
             }
+            // A cancelled task cannot scan processes: the loop also ends when the game is still running.
+            if Task.isCancelled { return }
             await self.finishSession(resolution: self.plannedResolution)
         }
     }
@@ -591,9 +649,10 @@ public final class SteppeController: ObservableObject {
         applyTuning(resolution)
         if settings.quitSteamAfterGame {
             phase = .playing(L("Saving to Steam Cloud"))
-            await steam.shutdown(environment: environment.setup())
+            await shutDownSteam()
         }
-        if let runDuration {
+        // A session that was force-quit while it was closing has nothing to report.
+        if let runDuration, !Task.isCancelled {
             let sessionLogURL = paths.logsDir.appendingPathComponent("game-session.log")
             let logText = (try? Data(contentsOf: sessionLogURL)).flatMap { String(data: $0, encoding: .isoLatin1) } ?? ""
             let outcome = LaunchOutcome.classify(duration: runDuration, logTail: String(logText.suffix(16_384)), resolution: resolution)
@@ -606,7 +665,8 @@ public final class SteppeController: ObservableObject {
         } else {
             lastSessionNote = nil
         }
-        phase = .ready
+        // A Force Quit shows Ready itself, once everything it stops is gone.
+        if !isStopping { phase = .ready }
     }
 
     /// Writes the files the game needs on a fresh install (see `GameBootstrap`); existing files are left alone.
@@ -718,9 +778,17 @@ public final class SteppeController: ObservableObject {
 
     /// Force-closes the game, Steam and every Wine process of the prefix.
     public func forceStop() {
-        playTask?.cancel()
-        Task {
+        // An uninstall already stops everything, and owns the install lock until it is done.
+        guard !isStopping, !isMaintaining else { return }
+        let play = playTask
+        play?.cancel()
+        // Until the stop has finished nothing else may start: the kill below would take a new launch with it.
+        stopTask = Task {
             await runner.killAll(environment: environment.setup())
+            await play?.value
+            stopTask = nil
+            releaseLockIfIdle()
+            if case .playing = phase, !isBusy { phase = .ready }
             await refresh()
         }
     }
@@ -729,7 +797,7 @@ public final class SteppeController: ObservableObject {
 
     /// Re-checks every component and fixes what is missing or damaged.
     public func repair() {
-        guard setupTask == nil, playTask == nil, !isMaintaining else { return }
+        guard !isBusy, isSupportedMac, acquireLock() else { return }
         if let gameDir = steam.gameDirectory { _ = GameFiles.restoreOriginals(in: gameDir) }
         // Dropping the markers makes the setup flow re-verify and rebuild each component.
         try? FileManager.default.removeItem(at: paths.engineMarker)
@@ -746,19 +814,34 @@ public final class SteppeController: ObservableObject {
     public func uninstall() async {
         guard !isMaintaining else { return }
         isMaintaining = true
-        let setup = setupTask, play = playTask
+        operationGeneration += 1
+        let setup = setupTask, play = playTask, stop = stopTask
         setup?.cancel()
         play?.cancel()
         await setup?.value
         await play?.value
+        // A Force Quit that is still killing processes must be over before the lock is given up below.
+        await stop?.value
         guard acquireLock() else { isMaintaining = false; return }
         await runner.killAll(environment: environment.setup())
-        try? FileManager.default.removeItem(at: paths.root)
-        defaults.removeObject(forKey: Self.rootDefaultsKey)
+        var leftover: String?
+        do {
+            try FileManager.default.removeItem(at: paths.root)
+        } catch {
+            if FileManager.default.fileExists(atPath: paths.root.path) { leftover = error.localizedDescription }
+            Log.shared.error("Could not delete the install folder: \(error.localizedDescription)")
+        }
+        // The chosen location stays in the preferences: `paths` keeps pointing at it, and a reinstall
+        // has to be found there after the next launch.
         installLock = nil
         isMaintaining = false
         for stage in SetupStage.allCases { stages[stage] = .pending }
         settingsLoaded = false
+        if let leftover {
+            // What is left can look like an install that only needs an update; a refresh would start installing again.
+            phase = .failed(L("Uninstall could not delete everything: %@", leftover))
+            return
+        }
         phase = .needsSetup
         await refresh()
     }

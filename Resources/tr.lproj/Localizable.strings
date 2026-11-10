@@ -148,6 +148,7 @@
 "This Mac can't run Steppe" = "Bu Mac Steppe'i çalıştıramıyor";
 "Try Again" = "Tekrar Dene";
 "Uninstall" = "Kaldır";
+"Uninstall could not delete everything: %@" = "Kaldırma her şeyi silemedi: %@";
 "Uninstall everything?" = "Her şey kaldırılsın mı?";
 "Uninstall Everything…" = "Her Şeyi Kaldır…";
 "Unpacking" = "Açılıyor";

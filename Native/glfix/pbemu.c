@@ -231,6 +231,38 @@ static CGLError pb_CGLSetCurrentContext(CGLContextObj ctx) {
 }
 DYLD_INTERPOSE(pb_CGLSetCurrentContext, CGLSetCurrentContext)
 
+typedef struct { GLenum binding, target, alignment, rowLength, skipRows, skipPixels; } StoreNames;
+typedef struct { GLint buffer, alignment, rowLength, skipRows, skipPixels; } StoreState;
+static const StoreNames k_pack = { GL_PIXEL_PACK_BUFFER_BINDING, GL_PIXEL_PACK_BUFFER, GL_PACK_ALIGNMENT,
+                                   GL_PACK_ROW_LENGTH, GL_PACK_SKIP_ROWS, GL_PACK_SKIP_PIXELS };
+static const StoreNames k_unpack = { GL_PIXEL_UNPACK_BUFFER_BINDING, GL_PIXEL_UNPACK_BUFFER, GL_UNPACK_ALIGNMENT,
+                                     GL_UNPACK_ROW_LENGTH, GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_PIXELS };
+
+// The pbuffer copy goes through a tightly packed w*h*4 heap buffer. Pixel-store state left by the game would
+// make GL touch more bytes than that, or use a buffer object instead of the heap buffer.
+static StoreState tight_store_begin(const StoreNames *n) {
+  StoreState s = { 0, 4, 0, 0, 0 };
+  glGetIntegerv(n->binding, &s.buffer);
+  glGetIntegerv(n->alignment, &s.alignment);
+  glGetIntegerv(n->rowLength, &s.rowLength);
+  glGetIntegerv(n->skipRows, &s.skipRows);
+  glGetIntegerv(n->skipPixels, &s.skipPixels);
+  if (s.buffer) glBindBuffer(n->target, 0);
+  glPixelStorei(n->alignment, 1);
+  glPixelStorei(n->rowLength, 0);
+  glPixelStorei(n->skipRows, 0);
+  glPixelStorei(n->skipPixels, 0);
+  return s;
+}
+
+static void tight_store_end(const StoreNames *n, StoreState s) {
+  glPixelStorei(n->alignment, s.alignment);
+  glPixelStorei(n->rowLength, s.rowLength);
+  glPixelStorei(n->skipRows, s.skipRows);
+  glPixelStorei(n->skipPixels, s.skipPixels);
+  if (s.buffer) glBindBuffer(n->target, (GLuint)s.buffer);
+}
+
 static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLenum source) {
   (void)ctx;
   pthread_mutex_lock(&g_pmu);
@@ -248,18 +280,17 @@ static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLen
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, a->fbo);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
-  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+  StoreState pack = tight_store_begin(&k_pack);
   glReadPixels(0, 0, pb->w, pb->h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  tight_store_end(&k_pack, pack);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevRead);
   if (a->ctx != cur) CGLSetCurrentContext(cur);
   GLsizei w = pb->w, h = pb->h;
   GLenum target = pb->target, ifmt = pb->ifmt;
   pthread_mutex_unlock(&g_pmu);
-  GLint prevUnpack = 4;
-  glGetIntegerv(GL_UNPACK_ALIGNMENT, &prevUnpack);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  StoreState unpack = tight_store_begin(&k_unpack);
   glTexImage2D(target, 0, ifmt, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, prevUnpack);
+  tight_store_end(&k_unpack, unpack);
   free(px);
   return kCGLNoError;
 }

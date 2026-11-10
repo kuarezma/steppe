@@ -61,7 +61,10 @@ public enum ProfileTuner {
         for name in names.sorted() {
             let cfg = profilesDir.appendingPathComponent(name).appendingPathComponent("profile.cfg")
             guard fm.fileExists(atPath: cfg.path) else { continue }
-            let data = try Data(contentsOf: cfg)
+            guard let data = try? Data(contentsOf: cfg) else {
+                outcome.skipped.append(name)
+                continue
+            }
             // Latin-1 preserves every original byte; only ASCII resolution digits change.
             guard let text = String(data: data, encoding: .isoLatin1) else {
                 outcome.skipped.append(name)
@@ -76,9 +79,17 @@ public enum ProfileTuner {
                 continue
             }
             let backup = cfg.appendingPathExtension("steppe-orig")
-            if !fm.fileExists(atPath: backup.path) { try data.write(to: backup) }
-            try updated.data(using: .isoLatin1)!.write(to: cfg, options: .atomic)
-            outcome.updated.append(name)
+            guard let updatedData = updated.data(using: .isoLatin1) else {
+                outcome.skipped.append(name)
+                continue
+            }
+            do {
+                if !fm.fileExists(atPath: backup.path) { try data.write(to: backup) }
+                try updatedData.write(to: cfg, options: .atomic)
+                outcome.updated.append(name)
+            } catch {
+                outcome.skipped.append(name)
+            }
         }
         return outcome
     }

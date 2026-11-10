@@ -53,8 +53,8 @@ public final class Log: @unchecked Sendable {
     /// Last `count` lines of the log, already redacted.
     public func tail(lines count: Int = 200) -> String {
         queue.sync {
-            guard let url = fileURL, let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
-            return text.split(separator: "\n", omittingEmptySubsequences: true).suffix(count).joined(separator: "\n")
+            guard let url = fileURL, let data = try? Data(contentsOf: url) else { return "" }
+            return String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: true).suffix(count).joined(separator: "\n")
         }
     }
 }

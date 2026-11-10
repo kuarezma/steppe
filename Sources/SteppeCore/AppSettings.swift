@@ -14,6 +14,25 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public init() {}
 
+    private enum CodingKeys: String, CodingKey {
+        case preset, customResolution, useCustomResolution, quitSteamAfterGame, experimentalMathPatches, recordFrameTimes
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        preset = (try? values.decode(PerformancePreset.self, forKey: .preset)) ?? preset
+        if let resolution = try? values.decode(Resolution.self, forKey: .customResolution),
+           resolution.width >= ResolutionPlanner.minimum.width, resolution.height >= ResolutionPlanner.minimum.height,
+           resolution.width <= 16384, resolution.height <= 16384 {
+            customResolution = resolution
+        }
+        useCustomResolution = (try? values.decode(Bool.self, forKey: .useCustomResolution)) ?? useCustomResolution
+        quitSteamAfterGame = (try? values.decode(Bool.self, forKey: .quitSteamAfterGame)) ?? quitSteamAfterGame
+        experimentalMathPatches = (try? values.decode(Bool.self, forKey: .experimentalMathPatches)) ?? experimentalMathPatches
+        recordFrameTimes = (try? values.decode(Bool.self, forKey: .recordFrameTimes)) ?? recordFrameTimes
+    }
+
     public static func load(from url: URL) -> AppSettings {
         guard let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) else { return AppSettings() }

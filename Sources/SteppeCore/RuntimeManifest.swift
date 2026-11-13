@@ -32,7 +32,8 @@ public struct RuntimeManifest: Sendable {
 
     public struct Steam: Sendable {
         public let setupURL: URL
-        public let appID: Int
+        /// Compatibility accessor; game identity lives in GameDefinition.
+        public var appID: Int { GameDefinition.cossacks3.steamAppID }
     }
 
     public let engine: Download
@@ -96,8 +97,7 @@ public struct RuntimeManifest: Sendable {
             ]
         ),
         steam: Steam(
-            setupURL: URL(string: "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe")!,
-            appID: 333_420
+            setupURL: URL(string: "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe")!
         ),
         patchRevision: 1,
         originalGameDLLs: [

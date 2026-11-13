@@ -32,13 +32,15 @@ public struct WineEnvironment: Sendable {
     public func game(settings: AppSettings) -> [String: String] {
         var env = common()
         env["WINEDEBUG"] = "-all"
-        if let glfix = glfixLibrary, FileManager.default.fileExists(atPath: glfix.path) {
+        if paths.game.integration == .cossacks3, let glfix = glfixLibrary, FileManager.default.fileExists(atPath: glfix.path) {
             env["DYLD_INSERT_LIBRARIES"] = glfix.path
             env["GLFIX_REMAP"] = "2"
         }
-        env["STEPPE_PATCH_LOG"] = SteppePaths.patchLogWindowsPath
-        if settings.experimentalMathPatches { env["STEPPE_MATH_PATCHES"] = "1" }
-        if settings.recordFrameTimes {
+        if paths.game.integration == .cossacks3 {
+            env["STEPPE_PATCH_LOG"] = SteppePaths.patchLogWindowsPath
+            if settings.experimentalMathPatches { env["STEPPE_MATH_PATCHES"] = "1" }
+        }
+        if paths.game.integration == .cossacks3 && settings.recordFrameTimes {
             env["GLFIX_FRAMETIMES"] = paths.logsDir.appendingPathComponent("frames.ns").path
         }
         return env

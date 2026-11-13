@@ -65,3 +65,10 @@ Use the issue templates and attach **Settings → Export Diagnostics**. For cras
 ## Releases
 
 Maintainers: see [`docs/RELEASING.md`](docs/RELEASING.md).
+
+## Hardware acceptance and game definitions
+
+See [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) for the real-Mac regression matrix,
+`Scripts/verify-mac.sh`, and the boundary between the shared `GameDefinition` core
+and the remaining Cossacks-specific controller. A game definition alone does not
+make a game supported.

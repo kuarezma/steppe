@@ -67,7 +67,7 @@ public struct SteamKit: Sendable {
     }
 
     public var appManifest: AppManifestInfo? {
-        SteamACF.read(at: paths.appManifestURL(appID: manifest.steam.appID))
+        SteamACF.read(at: paths.appManifestURL(appID: paths.game.steamAppID))
     }
 
     public var gameDirectory: URL? {
@@ -77,7 +77,7 @@ public struct SteamKit: Sendable {
 
     public var isGameInstalled: Bool {
         guard let info = appManifest, info.isFullyInstalled, let dir = gameDirectory else { return false }
-        return FileManager.default.fileExists(atPath: dir.appendingPathComponent("cossacks.exe").path)
+        return FileManager.default.fileExists(atPath: dir.appendingPathComponent(paths.game.executableName).path)
     }
 
     /// Downloads Valve's official installer and runs it silently inside the prefix.
@@ -111,7 +111,7 @@ public struct SteamKit: Sendable {
 
     /// Asks the running (or starting) client to install the game; Steam shows its own confirmation dialog.
     public func requestGameInstall(environment: [String: String]) throws {
-        try runner.spawn(["C:\\Steam\\steam.exe", "steam://install/\(manifest.steam.appID)"], environment: environment, logName: "steam-install-request.log")
+        try runner.spawn(["C:\\Steam\\steam.exe", "steam://install/\(paths.game.steamAppID)"], environment: environment, logName: "steam-install-request.log")
     }
 
     public func isClientRunning() async -> Bool {

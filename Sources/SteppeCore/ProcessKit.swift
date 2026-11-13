@@ -230,7 +230,7 @@ public enum ProcessScanner {
         }
     }
 
-    public static func isGameRunning(inEngine bundle: URL) async -> Bool {
-        await processes(inEngine: bundle).contains { $0.imageName == "cossacks.exe" }
+    public static func isGameRunning(inEngine bundle: URL, game: GameDefinition = .cossacks3) async -> Bool {
+        await processes(inEngine: bundle).contains { $0.imageName == game.executableName.lowercased() }
     }
 }

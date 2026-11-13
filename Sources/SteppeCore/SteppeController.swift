@@ -135,7 +135,7 @@ public final class SteppeController: ObservableObject {
         if isBusy { return }
         let generation = operationGeneration
         let ready = await isEverythingReady()
-        let gameRunning = ready ? await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) : false
+        let gameRunning = ready ? await ProcessScanner.isGameRunning(inEngine: paths.wineBundle, game: paths.game) : false
         guard paths.root == root, operationGeneration == generation else { return }
         applyRefresh(ready: ready, gameRunning: gameRunning)
     }
@@ -578,12 +578,12 @@ public final class SteppeController: ObservableObject {
             await prepareMicrophoneAndEngineForSteam()
             // The microphone prompt can stay open for a long time; a Force Quit meanwhile must not launch anything.
             try Task.checkCancellation()
-            try kit.launchClient(arguments: ["-applaunch", String(manifest.steam.appID)], environment: environment.game(settings: settings), logName: "game-session.log")
+            try kit.launchClient(arguments: ["-applaunch", String(paths.game.steamAppID)], environment: environment.game(settings: settings), logName: "game-session.log")
             Log.shared.info("Launched at \(resolution); speed libraries: \(speedStatus)")
             startDialogHelper()
 
             var waited = 0
-            while !(await ProcessScanner.isGameRunning(inEngine: paths.wineBundle)) {
+            while !(await ProcessScanner.isGameRunning(inEngine: paths.wineBundle, game: paths.game)) {
                 try Task.checkCancellation()
                 waited += 2
                 if waited > 600 { throw SetupError.gameDidNotStart }
@@ -593,7 +593,7 @@ public final class SteppeController: ObservableObject {
             }
             phase = .playing(L("Running"))
             let runStarted = Date()
-            while await ProcessScanner.isGameRunning(inEngine: paths.wineBundle) {
+            while await ProcessScanner.isGameRunning(inEngine: paths.wineBundle, game: paths.game) {
                 try await Task.sleep(nanoseconds: 2_000_000_000)
             }
             // A cancelled task cannot scan processes: the loop ends as if the game had quit.
@@ -634,7 +634,7 @@ public final class SteppeController: ObservableObject {
         playTask = Task { [weak self] in
             guard let self else { return }
             defer { self.playTask = nil }
-            while await ProcessScanner.isGameRunning(inEngine: self.paths.wineBundle) {
+            while await ProcessScanner.isGameRunning(inEngine: self.paths.wineBundle, game: self.paths.game) {
                 // Whoever cancelled (Force Quit, uninstall) stops the game and decides what is shown next.
                 guard (try? await Task.sleep(nanoseconds: 2_000_000_000)) != nil else { return }
             }

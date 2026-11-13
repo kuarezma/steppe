@@ -3,9 +3,11 @@ import Foundation
 /// All on-disk locations Steppe uses, derived from a single root directory.
 public struct SteppePaths: Sendable {
     public let root: URL
+    public let game: GameDefinition
 
-    public init(root: URL) {
+    public init(root: URL, game: GameDefinition = .cossacks3) {
         self.root = root
+        self.game = game
     }
 
     /// `~/Library/Application Support/Steppe`
@@ -22,7 +24,7 @@ public struct SteppePaths: Sendable {
     public var frameworksDir: URL { root.appendingPathComponent("frameworks", isDirectory: true) }
     public var downloadsDir: URL { root.appendingPathComponent("downloads", isDirectory: true) }
     public var logsDir: URL { root.appendingPathComponent("logs", isDirectory: true) }
-    public var prefixDir: URL { root.appendingPathComponent("prefixes/cossacks3", isDirectory: true) }
+    public var prefixDir: URL { root.appendingPathComponent("prefixes/\(game.id)", isDirectory: true) }
     public var stateFile: URL { root.appendingPathComponent("state.json") }
     public var settingsFile: URL { root.appendingPathComponent("settings.json") }
     public var engineMarker: URL { engineDir.appendingPathComponent(".steppe-engine.json") }
@@ -58,7 +60,8 @@ public struct SteppePaths: Sendable {
 
     /// Where the game stores profiles (`profile.cfg` lives inside each profile).
     public var gameProfilesDir: URL? {
-        windowsUserDir?.appendingPathComponent("Documents/cossacks/profiles", isDirectory: true)
+        guard let relative = game.profilesRelativePath else { return nil }
+        return windowsUserDir?.appendingPathComponent(relative, isDirectory: true)
     }
 
     public func appManifestURL(appID: Int) -> URL {

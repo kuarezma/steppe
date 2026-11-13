@@ -123,9 +123,10 @@ public enum PrefixBuilder {
     /// The game's own documents folder (profiles, saves) of any Windows user in the prefix has content.
     static func hasGameDocuments(paths: SteppePaths) -> Bool {
         let fm = FileManager.default
+        guard let relative = paths.game.documentsRelativePath else { return false }
         let users = paths.driveC.appendingPathComponent("users", isDirectory: true)
         for user in (try? fm.contentsOfDirectory(atPath: users.path)) ?? [] {
-            let documents = users.appendingPathComponent(user).appendingPathComponent("Documents/cossacks")
+            let documents = users.appendingPathComponent(user).appendingPathComponent(relative)
             if let entries = try? fm.contentsOfDirectory(atPath: documents.path), !entries.isEmpty { return true }
         }
         return false
@@ -135,7 +136,7 @@ public enum PrefixBuilder {
     static func hasUserData(paths: SteppePaths) -> Bool {
         let apps = paths.steamApps
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
-        return !entries.isEmpty || FileManager.default.fileExists(atPath: paths.appManifestURL(appID: RuntimeManifest.current.steam.appID).path)
+        return !entries.isEmpty || FileManager.default.fileExists(atPath: paths.appManifestURL(appID: paths.game.steamAppID).path)
     }
 
     /// Lets a newer engine adopt an existing prefix (`wineboot -u`) without touching Steam or the game.

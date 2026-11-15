@@ -23,6 +23,32 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - The build's privacy gate now fails when the executable contains a home-directory path (`Scripts/build-app.sh`; the previous `grep -q` under `pipefail` reported a match as clean), and the CI scan covers binary files.
 - A Python bytecode file that embedded a local path was removed from the repository and `__pycache__` is ignored. CI runs with a read-only token.
 
+## [0.1.11]
+
+### Added
+- **Swift 6 strict concurrency & testability (`Package.swift`, `GameProfile`, `SteppeRuntime`)**:
+  - Enabled Swift 6 language mode (`swiftLanguageModes: [.v6]`) across `SteppeCore`, `Steppe`, `steppe-cli`, and `SteppeCoreTests`.
+  - Extracted `GameProfile` and the `SteppeRuntime` protocol, enabling deterministic mock-based lifecycle tests (`AuditFixesTests`, expanding the suite to 94 XCTest cases).
+- **Real Ed25519 appcast verification & deterministic release builds (`Scripts/verify-appcast.py`, `Scripts/build-app.sh`)**:
+  - Added cryptographic Ed25519 signature verification against `Config/sparkle_public_key.txt` (`cryptography` with `CryptoKit` fallback) and `--embed-release-notes` checks.
+  - Switched `CFBundleVersion` generation to a monotonic semantic-version formula with pre-release support (`--prerelease` flag in `release.yml`).
+- **CLI & maintenance improvements (`steppe-cli`, `SteppeController`)**:
+  - Added `repair`, `disk status`, and `--help` support in `steppe-cli`, plus lock-aware `repair()`, `restoreOriginalGameFiles()`, and `uninstall()` cleanup in `SteppeController`.
+
+### Security & Stability
+- **Minimal app entitlements (`Config/Steppe.entitlements`)**: stripped unused `com.apple.security.cs.*` entitlements, retaining only `com.apple.security.device.audio-input`.
+- **Lifecycle & race-condition hardening (`SteppeController`, `InstallLock`)**:
+  - Guarded `refresh()`, `loadSettingsIfNeeded()`, and `reloadPatchReport()` with `operationGeneration` and path checks; moved `acquireLock` after external-volume validation; bounded Steam update polling (3600 s) with stalled sign-in hints and `Task.checkCancellation()`.
+  - Deferred `dismiss-dialog.exe` startup until `cossacks.exe` is actually running so long Steam updates cannot exhaust its 600 s timeout before the game launches.
+  - Separated `LockFailure.directoryError` from POSIX `errno` handling.
+- **Privacy redaction & leak checks (`Redaction`, `Diagnostics`, `build-app.sh`)**:
+  - Hardened IPv4 and `/Volumes/<volume>` redaction (including spaces, apostrophes, and end-of-line matches) as well as external volume names in `Diagnostics.sanitizedReport`.
+  - Fixed `pipefail` + `grep -q` SIGPIPE handling in `Scripts/build-app.sh` `/Users/` host-path leak checks.
+- **Native shim fixes (`glfix`, `vorbis-fast`, `dialog-helper`)**:
+  - Interposed `CGLReleaseContext` alongside `CGLDestroyContext` in `pbemu.c` to reclaim PBuffer slots on context release.
+  - Added `-mstackrealign`, full 25-export wrapping, and aligned `ov_raw_seek` frame-byte handling in `vorbisfile_fast.c`.
+  - Updated `dismiss-dialog.exe` default timeout to 600 s and main-window stability dwell check to 10 s (`MAIN_WINDOW_STABLE_MS = 10000`).
+
 ## [0.1.10]
 
 ### Fixed

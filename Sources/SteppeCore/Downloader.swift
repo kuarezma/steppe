@@ -50,6 +50,12 @@ public enum Downloader {
         while true {
             attempt += 1
             do {
+                // Without a checksum nothing proves that a partial file and the rest the server sends now belong
+                // to the same version, so such a download always starts over: after an earlier run and after a
+                // failed attempt. A partial that cannot be removed fails the attempt; it is never resumed.
+                if expectedSHA256 == nil, fm.fileExists(atPath: part.path) {
+                    try fm.removeItem(at: part)
+                }
                 try await fetch(url: url, part: part, expectedSize: expectedSize, configuration: configuration, progress: progress)
                 let size = (try? fm.attributesOfItem(atPath: part.path)[.size] as? Int64) ?? 0
                 if let expectedSize, size != expectedSize {

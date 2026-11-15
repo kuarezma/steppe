@@ -53,9 +53,10 @@ jobs:
           VERSION: 0.0.0-ci
 
       - name: Entitlements & privacy scan
+        # -a: the executables are binary files, which a text-only scan would skip.
         run: |
           ! codesign -d --entitlements :- dist/Steppe.app 2>/dev/null | grep -q "com.apple.security.cs." || { echo "unexpected hardened-runtime bypass entitlement"; exit 1; }
-          ! grep -rIl -E "/Users/[A-Za-z0-9_.-]+/" dist/Steppe.app || { echo "home path found"; exit 1; }
+          if grep -rla -E "/Users/[A-Za-z0-9_.-]+/" dist/Steppe.app; then echo "home path found"; exit 1; fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

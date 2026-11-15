@@ -116,7 +116,7 @@ codesign --verify --deep --strict "$APP"
 
 echo "==> Checks"
 lipo -info "$APP/Contents/MacOS/Steppe"
-LEAKED_FILES="$(grep -rIl -E "/Users/[A-Za-z0-9_.-]+/" "$APP" || true)"
+LEAKED_FILES="$(grep -rla -E "/Users/[A-Za-z0-9_.-]+/" "$APP" || true)"
 if [ -n "$LEAKED_FILES" ]; then
     echo "WARNING: the app bundle contains a home-directory path:"
     printf '%s\n' "$LEAKED_FILES" | head -5

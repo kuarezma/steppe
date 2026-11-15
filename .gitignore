@@ -8,6 +8,10 @@ Native/*/.cache/
 *.exe
 *.dylib
 
+# Python bytecode (it embeds the absolute path of the machine it was built on)
+__pycache__/
+*.pyc
+
 # macOS / editors
 .DS_Store
 *.xcuserstate

@@ -29,18 +29,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        preset = try container.decodeIfPresent(PerformancePreset.self, forKey: .preset) ?? .balanced
-        let rawCustom = try container.decodeIfPresent(Resolution.self, forKey: .customResolution) ?? Resolution(width: 1710, height: 1112)
-        customResolution = Self.clampedResolution(rawCustom)
-        useCustomResolution = try container.decodeIfPresent(Bool.self, forKey: .useCustomResolution) ?? false
-        quitSteamAfterGame = try container.decodeIfPresent(Bool.self, forKey: .quitSteamAfterGame) ?? true
-        experimentalMathPatches = try container.decodeIfPresent(Bool.self, forKey: .experimentalMathPatches) ?? false
-        recordFrameTimes = try container.decodeIfPresent(Bool.self, forKey: .recordFrameTimes) ?? false
-        enableMicrophone = try container.decodeIfPresent(Bool.self, forKey: .enableMicrophone) ?? false
-        enableSpeedPatches = try container.decodeIfPresent(Bool.self, forKey: .enableSpeedPatches) ?? true
-        enableNotchHUD = try container.decodeIfPresent(Bool.self, forKey: .enableNotchHUD) ?? true
-        multithreadedEngine = try container.decodeIfPresent(Bool.self, forKey: .multithreadedEngine) ?? true
+        // One invalid value must not reset the others: each field falls back on its own.
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
+        }
+        let decodedVersion: Int = value(.schemaVersion, 1)
+        preset = value(.preset, PerformancePreset.balanced)
+        customResolution = Self.clampedResolution(value(.customResolution, Resolution(width: 1710, height: 1112)))
+        useCustomResolution = value(.useCustomResolution, false)
+        quitSteamAfterGame = value(.quitSteamAfterGame, true)
+        experimentalMathPatches = value(.experimentalMathPatches, false)
+        recordFrameTimes = value(.recordFrameTimes, false)
+        enableMicrophone = value(.enableMicrophone, false)
+        enableSpeedPatches = value(.enableSpeedPatches, true)
+        enableNotchHUD = value(.enableNotchHUD, true)
+        multithreadedEngine = value(.multithreadedEngine, true)
         schemaVersion = max(decodedVersion, Self.currentSchemaVersion)
     }
 

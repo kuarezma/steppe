@@ -76,6 +76,9 @@ public final class SteppeController: ObservableObject {
     private let configureGlobalLogger: Bool
     private var setupTask: Task<Void, Never>?
     private var playTask: Task<Void, Never>?
+    /// A Force Quit that is still stopping processes: anything launched now would be killed with them.
+    private var stopTask: Task<Void, Never>?
+    var isStopping: Bool { stopTask != nil }
     private var installLock: InstallLock?
     private var speedSample: (time: Date, bytes: Int64)?
     private let defaults: UserDefaults
@@ -120,7 +123,7 @@ public final class SteppeController: ObservableObject {
 
     // MARK: - Derived values
 
-    public var isBusy: Bool { setupTask != nil || playTask != nil || isMaintaining }
+    public var isBusy: Bool { setupTask != nil || playTask != nil || isMaintaining || isStopping }
     public var environment: WineEnvironment { WineEnvironment(paths: paths, nativeDir: nativeDir) }
     public var patchReport: PatchReport { cachedPatchReport }
     private var steam: SteamKit { SteamKit(paths: paths, manifest: manifest) }
@@ -144,7 +147,7 @@ public final class SteppeController: ObservableObject {
 
     public func handleDisplayChange() {
         display = runtime.primaryDisplay()
-        guard setupTask == nil, playTask == nil, !isMaintaining else { return }
+        guard !isBusy else { return }
         displayModes = nil
     }
 
@@ -171,22 +174,22 @@ public final class SteppeController: ObservableObject {
             phase = .unsupported(reason)
             return
         }
-        if setupTask != nil || playTask != nil || isMaintaining { return }
+        if isBusy { return }
 
         let ready = await isEverythingReady()
-        guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+        guard gen == operationGeneration, !isBusy else { return }
 
         if ready {
             markAllDone()
             switch await runtime.checkGameRunning(inEngine: paths.wineBundle, executableName: paths.profile.executableName) {
             case .running:
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 attachToRunningGame()
             case .notRunning:
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 phase = .ready
             case .unknown(let reason):
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 Log.shared.warn("Process scan failed during refresh: \(reason)")
                 phase = .ready
             }
@@ -217,7 +220,8 @@ public final class SteppeController: ObservableObject {
         let gen = operationGeneration
         let url = paths.settingsFile
         let loaded = await Task.detached { AppSettings.load(from: url) }.value
-        guard gen == operationGeneration, url == paths.settingsFile else { return }
+        // Another refresh may have loaded them meanwhile: assigning now would overwrite what changed since.
+        guard !settingsLoaded, gen == operationGeneration, url == paths.settingsFile else { return }
         settings = loaded
         settingsLoaded = true
     }
@@ -299,14 +303,14 @@ public final class SteppeController: ObservableObject {
     }
 
     private func releaseLockIfIdle() {
-        if setupTask == nil && playTask == nil && !isMaintaining { installLock = nil }
+        if !isBusy { installLock = nil }
     }
 
     // MARK: - Setup
 
     public func startSetup() {
         autoSetupSuppressed = false
-        guard setupTask == nil, playTask == nil, !isMaintaining, isSupportedMac else { return }
+        guard !isBusy, isSupportedMac else { return }
         operationGeneration &+= 1
         activePrompt = nil
         phase = .settingUp
@@ -352,16 +356,18 @@ public final class SteppeController: ObservableObject {
             try await ensurePrefix()
             try await ensureSteamClient()
             try await ensureSignInAndGame()
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             phase = .ready
             lastSessionNote = nil
             Log.shared.info("Setup complete")
         } catch is CancellationError {
             Log.shared.info("Setup cancelled")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             phase = .needsSetup
         } catch {
             Log.shared.error("Setup failed: \(error.localizedDescription)")
+            // A command that timed out can leave Wine processes behind; a retry must not meet them.
+            await stopPrefix()
             failCurrentStage(error.localizedDescription)
             phase = .failed(error.localizedDescription)
         }
@@ -573,6 +579,7 @@ public final class SteppeController: ObservableObject {
         if !(await runtime.isClientRunning(inEngine: paths.wineBundle)) {
             set(.signIn, .running(progress: nil, detail: L("Starting Steam")))
             await prepareEngineAndMicrophoneForSteam()
+            try Task.checkCancellation()
             steamLaunchGraceUntil = Date().addingTimeInterval(25)
             try runtime.launchSteamClient(paths: paths, manifest: manifest, arguments: [], environment: env, logName: "steam-setup.log")
         }
@@ -631,6 +638,8 @@ public final class SteppeController: ObservableObject {
 
     private func download(_ item: RuntimeManifest.Download, to destination: URL, stage: SetupStage, label: String, share: Double) async throws {
         speedSample = nil
+        downloadSpeed = 0
+        defer { downloadSpeed = 0 }
         set(stage, .running(progress: 0, detail: label))
         try await runtime.download(item, to: destination) { [weak self] p in
             Task { @MainActor in
@@ -659,7 +668,7 @@ public final class SteppeController: ObservableObject {
     // MARK: - Playing
 
     public func play() {
-        guard case .ready = phase, playTask == nil, setupTask == nil, !isMaintaining, acquireLock(forPlay: true) else { return }
+        guard case .ready = phase, !isBusy, acquireLock(forPlay: true) else { return }
         operationGeneration &+= 1
         phase = .playing(L("Preparing"))
         playTask = Task { [weak self] in
@@ -776,13 +785,14 @@ public final class SteppeController: ObservableObject {
             await finishSession(resolution: resolution, runDuration: runDuration)
         } catch is CancellationError {
             Log.shared.info("Play cancelled")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await stopPrefix()
             lastSessionNote = nil
             await reloadPatchReport()
-            phase = .ready
+            // A Force Quit shows Ready itself, once everything it stops is gone.
+            if !isStopping { phase = .ready }
         } catch {
             Log.shared.error("Play failed: \(error.localizedDescription)")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             lastSessionNote = error.localizedDescription
             await reloadPatchReport()
             phase = .ready
@@ -808,7 +818,7 @@ public final class SteppeController: ObservableObject {
     }
 
     private func attachToRunningGame() {
-        guard playTask == nil, setupTask == nil, !isMaintaining else { return }
+        guard !isBusy else { return }
         guard acquireLock(forPlay: true) else {
             phase = .ready
             return
@@ -833,9 +843,10 @@ public final class SteppeController: ObservableObject {
         applyTuning(resolution)
         if settings.quitSteamAfterGame {
             phase = .playing(L("Saving to Steam Cloud"))
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
         }
-        if let runDuration {
+        // A session that was force-quit while it was closing has nothing to report.
+        if let runDuration, !Task.isCancelled {
             let sessionLogURL = paths.logsDir.appendingPathComponent("game-session.log")
             let logText = (try? Data(contentsOf: sessionLogURL)).map { String(decoding: $0, as: UTF8.self) } ?? ""
             let outcome = LaunchOutcome.classify(
@@ -854,7 +865,20 @@ public final class SteppeController: ObservableObject {
             lastSessionNote = nil
         }
         await reloadPatchReport()
-        phase = .ready
+        if !isStopping { phase = .ready }
+    }
+
+    /// Closes Steam and everything else in the prefix, also on behalf of a cancelled task: run inside one,
+    /// every process call and wait of the shutdown would return at once and leave Steam running.
+    func shutDownSteam() async {
+        let runtime = runtime, paths = paths, manifest = manifest, environment = environment.setup()
+        await Task.detached { await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment) }.value
+    }
+
+    /// Stops every process of the prefix at once, without Steam's own shutdown; also on behalf of a cancelled task.
+    private func stopPrefix() async {
+        let runtime = runtime, paths = paths, environment = environment.setup()
+        await Task.detached { await runtime.killAllWine(paths: paths, environment: environment) }.value
     }
 
     private func pruneFrameTimes() {
@@ -971,9 +995,17 @@ public final class SteppeController: ObservableObject {
 
     /// Force-closes the game, Steam and every Wine process of the prefix.
     public func forceStop() {
-        playTask?.cancel()
-        Task {
+        // An uninstall already stops everything, and owns the install lock until it is done.
+        guard !isStopping, !isMaintaining else { return }
+        let play = playTask
+        play?.cancel()
+        // Until the stop has finished nothing else may start: the kill below would take a new launch with it.
+        stopTask = Task {
             await runtime.killAllWine(paths: paths, environment: environment.setup())
+            await play?.value
+            stopTask = nil
+            releaseLockIfIdle()
+            if case .playing = phase, !isBusy { phase = .ready }
             await refresh()
         }
     }
@@ -1012,11 +1044,13 @@ public final class SteppeController: ObservableObject {
         operationGeneration &+= 1
         autoSetupSuppressed = false
         forcePrefixRepair = false
-        let setup = setupTask, play = playTask
+        let setup = setupTask, play = playTask, stop = stopTask
         setup?.cancel()
         play?.cancel()
         await setup?.value
         await play?.value
+        // A Force Quit that is still killing processes must be over before the lock is given up below.
+        await stop?.value
         guard acquireLock(forPlay: false) else {
             isMaintaining = false
             return
@@ -1044,8 +1078,10 @@ public final class SteppeController: ObservableObject {
         let lockFile = rootDir.appendingPathComponent(".steppe.lock")
         await Task.detached {
             let fm = FileManager.default
-            for item in ownedTargets {
-                try? fm.removeItem(at: item)
+            for item in ownedTargets where fm.fileExists(atPath: item.path) {
+                do { try fm.removeItem(at: item) } catch {
+                    Log.shared.error("Could not delete \(item.lastPathComponent): \(error.localizedDescription)")
+                }
             }
             try? fm.removeItem(at: lockFile)
         }.value

@@ -2,6 +2,27 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- Setup and launch can no longer hang behind Wine's background processes (`ProcessRunner.run`): `wineserver` and Wine's services inherit the output pipes of the command that started them, and the runner used to wait for those pipes to close, which defeated every timeout and made *Cancel* unresponsive. Output is now awaited for a bounded time after the command exits, and not at all once it timed out or was cancelled.
+- *Force Quit Game* no longer leaves an error note such as "The operation couldn't be completed" on the Ready screen (`SteppeController.runPlay`), and the Ready screen appears only once everything is stopped: a *Play* pressed right after it could be killed by the Force Quit that was still finishing (`SteppeController.forceStop`).
+- Cancelling the setup or a launch now really closes Steam (`SteppeController.shutDownSteam`): the cleanup ran inside the cancelled task, where every process call returned immediately and Steam was left running.
+- *Cancel* while a command is running (unpacking, a registry step) ends as a cancelled setup instead of "Setup failed": a command stopped by a cancellation now reports the cancellation, not the exit status of the kill (`ProcessRunner.run`).
+- A launch that was force-quit while the macOS microphone prompt was still open no longer starts Steam afterwards.
+- *Uninstall Everything* no longer waits for a game that Steppe only attached to; the game is stopped like everything else.
+- Processes of an engine whose path resolves below `/private` (for example an install location under `/tmp`) are found again (`ProcessScanner.processes`).
+- Settings survive an update (`AppSettings`): a `settings.json` written by an older or newer version, or one with a single invalid value, no longer resets every setting.
+- *Export Diagnostics* includes Wine and game logs that contain bytes that are not valid UTF-8, and reads only the end of large logs (`Diagnostics.report`).
+- One unreadable `profile.cfg` no longer stops the resolution from being applied to the other profiles (`ProfileTuner.apply`).
+- The download-speed label no longer shows the previous download's speed while Steam is being downloaded.
+- `glfix` pbuffer copies ignore pixel-store state left in the context (`pb_CGLTexImagePBuffer`): a non-default row length or skip could write past the copy buffer; the state is now saved, neutralised and restored.
+
+### Security
+- The Steam installer, which cannot be pinned by checksum, is never resumed from a partial file, neither one left by an earlier run nor one from a failed attempt, so it cannot be assembled from two different versions (`Downloader.download`).
+- The build's privacy gate now fails when the executable contains a home-directory path (`Scripts/build-app.sh`; the previous `grep -q` under `pipefail` reported a match as clean), and the CI scan covers binary files.
+- A Python bytecode file that embedded a local path was removed from the repository and `__pycache__` is ignored. CI runs with a read-only token.
+
 ## [0.1.11]
 
 ### Added

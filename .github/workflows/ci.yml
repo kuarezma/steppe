@@ -5,12 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Build and test
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Toolchain info
         run: |
@@ -18,40 +21,43 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Check repository hygiene
+        run: |
+          test -z "$(git ls-files '*.pyc' '*__pycache__*')" || { echo "tracked bytecode files found"; exit 1; }
+
       - name: Install mingw-w64 (builds the Windows helper DLLs)
         run: brew install mingw-w64
+
+      - name: Script & localization checks
+        run: |
+          python3 Scripts/verify-appcast.py --selftest
+          python3 Scripts/extract-strings.py --check
 
       - name: Swift unit tests
         run: swift test
 
-      - name: Localization keys are complete
-        run: python3 Scripts/extract-strings.py --check
-
-      - name: Native components build
+      - name: CLI smoke test
         run: |
-          make -C Native/glfix
-          make -C Native/vorbis-fast
-          make -C Native/dialog-helper
+          .build/debug/steppe-cli --help >/dev/null
+          .build/debug/steppe-cli resolution 2560 1600
 
-      - name: glfix tests (GL-less runners skip the GL cases)
-        run: make -C Native/glfix test
-
-      - name: vorbis-fast tests
-        run: make -C Native/vorbis-fast test
-
-      - name: dialog-helper tests
-        run: make -C Native/dialog-helper test
+      - name: Native components build and test
+        run: |
+          make -C Native/glfix clean test
+          make -C Native/vorbis-fast clean test
+          make -C Native/dialog-helper clean test
 
       - name: Build the app bundle
         run: Scripts/build-app.sh
         env:
           VERSION: 0.0.0-ci
 
-      - name: Privacy scan of the bundle
+      - name: Entitlements & privacy scan
         run: |
+          ! codesign -d --entitlements :- dist/Steppe.app 2>/dev/null | grep -q "com.apple.security.cs." || { echo "unexpected hardened-runtime bypass entitlement"; exit 1; }
           ! grep -rIl -E "/Users/[A-Za-z0-9_.-]+/" dist/Steppe.app || { echo "home path found"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Steppe-ci
           path: dist/Steppe.app

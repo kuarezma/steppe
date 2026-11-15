@@ -14,7 +14,28 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${VERSION:-0.1.0}"
-BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
+if [ -z "${BUILD:-}" ]; then
+    BASE_VER="${VERSION%%-*}"
+    IFS='.' read -r V_MAJ V_MIN V_PAT <<< "$BASE_VER"
+    V_MAJ="${V_MAJ:-0}"
+    V_MIN="${V_MIN:-0}"
+    V_PAT="${V_PAT:-0}"
+    PRERELEASE_OFFSET=999
+    if [[ "$VERSION" == *-* ]]; then
+        PRERELEASE="${VERSION#*-}"
+        NUM_PART="$(printf '%s' "$PRERELEASE" | grep -oE '[0-9]+' | head -n1 || true)"
+        NUM_VAL=$(( 10#${NUM_PART:-0} ))
+        [ "$NUM_VAL" -gt 199 ] && NUM_VAL=199
+        case "$PRERELEASE" in
+            alpha*) PRERELEASE_OFFSET=$(( NUM_VAL )) ;;
+            beta*)  PRERELEASE_OFFSET=$(( 200 + NUM_VAL )) ;;
+            rc*)    PRERELEASE_OFFSET=$(( 500 + NUM_VAL )) ;;
+            *)      PRERELEASE_OFFSET=$(( 100 + NUM_VAL )) ;;
+        esac
+    fi
+    BUILD=$(( (10#${V_MAJ} * 1000000 + 10#${V_MIN} * 1000 + 10#${V_PAT}) * 1000 + PRERELEASE_OFFSET ))
+    [ "$BUILD" -gt 0 ] || BUILD=1
+fi
 FEED_URL="${FEED_URL:-https://github.com/kuarezma/steppe/releases/latest/download/appcast.xml}"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 ED_KEY="$(tr -d '[:space:]' < Config/sparkle_public_key.txt)"
@@ -95,9 +116,19 @@ codesign --verify --deep --strict "$APP"
 
 echo "==> Checks"
 lipo -info "$APP/Contents/MacOS/Steppe"
-if strings -a "$APP/Contents/MacOS/Steppe" | grep -q -E "/Users/[A-Za-z0-9_.-]+/"; then
-    echo "WARNING: the executable still contains a home-directory path:"
-    strings -a "$APP/Contents/MacOS/Steppe" | grep -E "/Users/[A-Za-z0-9_.-]+/" | head -3
+LEAKED_FILES="$(grep -rIl -E "/Users/[A-Za-z0-9_.-]+/" "$APP" || true)"
+if [ -n "$LEAKED_FILES" ]; then
+    echo "WARNING: the app bundle contains a home-directory path:"
+    printf '%s\n' "$LEAKED_FILES" | head -5
     exit 1
 fi
+for bin in "$APP/Contents/MacOS/Steppe" "$APP/Contents/Resources/Native/"*; do
+    [ -f "$bin" ] || continue
+    BIN_LEAKS="$(strings -a "$bin" | grep -E "/Users/[A-Za-z0-9_.-]+/" || true)"
+    if [ -n "$BIN_LEAKS" ]; then
+        echo "WARNING: binary contains a home-directory path: $bin"
+        printf '%s\n' "$BIN_LEAKS" | head -3
+        exit 1
+    fi
+done
 echo "Built $APP (version $VERSION, build $BUILD)"

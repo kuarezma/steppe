@@ -7,7 +7,12 @@ struct WelcomeView: View {
     @EnvironmentObject var updater: UpdaterModel
     @Environment(\.openSettings) private var openSettings
 
-    private var enoughSpace: Bool { controller.freeBytes >= controller.requiredFreeBytesNow }
+    private var enoughSpace: Bool {
+        if case .available(let bytes) = controller.diskStatus {
+            return bytes >= controller.requiredFreeBytesNow
+        }
+        return false
+    }
     private var canInstall: Bool { controller.hasCheckedDisk && enoughSpace }
 
     var body: some View {
@@ -78,9 +83,20 @@ struct WelcomeView: View {
                     }
                     Spacer()
                     if controller.hasCheckedDisk {
-                        Text("\(ByteCountFormatter.gigabytes(controller.freeBytes)) free")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(enoughSpace ? Theme.textSecondary : Theme.danger)
+                        switch controller.diskStatus {
+                        case .available(let bytes):
+                            Text("\(ByteCountFormatter.gigabytes(bytes)) free")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(enoughSpace ? Theme.textSecondary : Theme.danger)
+                        case .externalVolumeUnmounted:
+                            Text("Disconnected")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.danger)
+                        case .unavailable:
+                            Text("Unavailable")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.danger)
+                        }
                     } else {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small)
@@ -98,8 +114,13 @@ struct WelcomeView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     if controller.hasCheckedDisk && !enoughSpace {
-                        Text("About \(ByteCountFormatter.gigabytes(controller.requiredFreeBytesNow)) of free space is needed. Free up space or choose another disk.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.danger)
+                        if case .externalVolumeUnmounted(let volumeName) = controller.diskStatus {
+                            Text("The external drive \"\(volumeName)\" is not connected. Reconnect it or choose another location.")
+                                .font(.system(size: 11)).foregroundStyle(Theme.danger)
+                        } else {
+                            Text("About \(ByteCountFormatter.gigabytes(controller.requiredFreeBytesNow)) of free space is needed. Free up space or choose another disk.")
+                                .font(.system(size: 11)).foregroundStyle(Theme.danger)
+                        }
                     }
                     Text("Steppe is an independent project. It is not affiliated with GSC Game World, Valve or Apple.")
                         .font(.system(size: 10)).foregroundStyle(Theme.textSecondary.opacity(0.8))

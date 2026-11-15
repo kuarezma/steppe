@@ -127,7 +127,10 @@ typedef struct {
 static ProgInfo g_progs[MAXPROG];
 static int g_nprogs;
 static _Thread_local uintptr_t g_curProg;
+static _Thread_local CGLContextObj g_curCtx;
 uintptr_t glfix_get_cur_prog(void) {
+  CGLContextObj ctx = CGLGetCurrentContext();
+  if (!ctx || ctx != g_curCtx) return 0;
   return g_curProg;
 }
 
@@ -307,8 +310,8 @@ static GLint gfx_GetUniformLocation(GLuint prog, const GLchar *name) {
   note_location((uintptr_t)prog, name, loc);
   return loc;
 }
-static void gfx_UseProgramObjectARB(GLhandleARB prog) { g_curProg = (uintptr_t)prog; glUseProgramObjectARB(prog); }
-static void gfx_UseProgram(GLuint prog)               { g_curProg = (uintptr_t)prog; glUseProgram(prog); }
+static void gfx_UseProgramObjectARB(GLhandleARB prog) { g_curCtx = CGLGetCurrentContext(); g_curProg = (uintptr_t)prog; glUseProgramObjectARB(prog); }
+static void gfx_UseProgram(GLuint prog)               { g_curCtx = CGLGetCurrentContext(); g_curProg = (uintptr_t)prog; glUseProgram(prog); }
 static void gfx_LinkProgramARB(GLhandleARB prog) {
   pbemu_forget_program((uintptr_t)prog);
   pthread_mutex_lock(&g_mu); ProgInfo *pi = findProg((uintptr_t)prog, 0); if (pi) pi->narr = 0; pthread_mutex_unlock(&g_mu);
@@ -381,6 +384,7 @@ DYLD_INTERPOSE(gfx_UniformMatrix4fvARB,   glUniformMatrix4fvARB)
 DYLD_INTERPOSE(gfx_UniformMatrix4fv,      glUniformMatrix4fv)
 
 static struct { const char *name; void *wrap; } g_dlhooks[] = {
+  { "glClear",                      (void *)gfx_Clear },
   { "glGetUniformLocationARB",      (void *)gfx_GetUniformLocationARB },
   { "glGetUniformLocation",         (void *)gfx_GetUniformLocation },
   { "glUseProgramObjectARB",        (void *)gfx_UseProgramObjectARB },

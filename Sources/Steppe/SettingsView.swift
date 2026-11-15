@@ -23,10 +23,7 @@ struct SettingsView: View {
     }
 
     private var busy: Bool {
-        switch controller.phase {
-        case .settingUp, .playing: return true
-        default: return false
-        }
+        controller.isBusy
     }
 
     private var resolutionChoices: [Resolution] {
@@ -79,6 +76,10 @@ struct SettingsView: View {
 
             Section("Game") {
                 Toggle("Quit Steam when the game closes", isOn: $controller.settings.quitSteamAfterGame)
+                Toggle("Move HUD clear of the camera housing", isOn: $controller.settings.enableNotchHUD)
+                Toggle("Allow voice chat (microphone)", isOn: $controller.settings.enableMicrophone)
+                Text("Off by default. Turn this on only if you use in-game voice chat.")
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent("Microphone access") {
                     HStack(spacing: 8) {
                         Text(verbatim: controller.microphoneStatus.localizedLabel)
@@ -97,10 +98,14 @@ struct SettingsView: View {
             }
 
             Section("Advanced") {
+                Toggle("Enable speed patches", isOn: $controller.settings.enableSpeedPatches)
+                Toggle("Multithreaded game engine", isOn: $controller.settings.multithreadedEngine)
                 Toggle("Faster geometry code (experimental)", isOn: $controller.settings.experimentalMathPatches)
+                    .disabled(!controller.settings.enableSpeedPatches)
                 Text("Speeds up some of the game's 3D math. It has not been verified for multiplayer, so leave it off if you play online.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Record frame times", isOn: $controller.settings.recordFrameTimes)
+                    .disabled(!controller.settings.enableSpeedPatches)
                 Text("Writes per-frame timings to the logs folder, useful for benchmarks and bug reports.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -118,7 +123,7 @@ struct SettingsView: View {
             Section("Maintenance") {
                 HStack {
                     Button("Repair…") { confirmRepair = true }.disabled(busy)
-                    Button("Restore Original Audio Files") { restoreAudio() }.disabled(busy)
+                    Button("Restore Original Game Files") { restoreOriginalFiles() }.disabled(busy)
                 }
                 HStack {
                     Button("Export Diagnostics") { exportDiagnostics() }
@@ -192,9 +197,8 @@ struct SettingsView: View {
         }
     }
 
-    private func restoreAudio() {
-        guard let gameDir = SteamKit(paths: controller.paths).gameDirectory else { return }
-        let count = String(GameFiles.restoreOriginals(in: gameDir))
+    private func restoreOriginalFiles() {
+        let count = String(controller.restoreOriginalGameFiles())
         toast = String(localized: "Restored \(count) original files. They are replaced again on the next launch.")
     }
 

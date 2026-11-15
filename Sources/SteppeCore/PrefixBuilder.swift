@@ -57,26 +57,7 @@ public enum PrefixBuilder {
         await runner.waitForIdle(environment: env, timeout: 120)
 
         try isolate(prefix: paths.prefixDir)
-
-        // Without a debugger entry Wine can hang in winedbg when a helper service crashes.
-        for key in [
-            #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
-            #"HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
-        ] {
-            try await runner.runChecked(["reg", "add", key, "/v", "Auto", "/t", "REG_SZ", "/d", "0", "/f"], environment: env, timeout: 60)
-            try await runner.runChecked(["reg", "add", key, "/v", "Debugger", "/t", "REG_SZ", "/d", "", "/f"], environment: env, timeout: 60)
-        }
-
-        // Ensure CoreAudio is explicitly active for both output and MacBook microphone input (mmdevapi / DirectSoundCapture).
-        let drivers = #"HKCU\Software\Wine\Drivers"#
-        try await runner.runChecked(["reg", "add", drivers, "/v", "Audio", "/t", "REG_SZ", "/d", "coreaudio", "/f"], environment: env, timeout: 60)
-
-        // Audio buffering that keeps the game's sound free of crackle on macOS (values measured on Apple silicon).
-        let directSound = #"HKCU\Software\Wine\DirectSound"#
-        for (name, value) in [("HelMargin", "10"), ("MaxHardwareChannels", "16"), ("SndQueueMax", "20"),
-                              ("DefaultBitsPerSample", "16"), ("DefaultSampleRate", "44100")] {
-            try await runner.runChecked(["reg", "add", directSound, "/v", name, "/t", "REG_DWORD", "/d", value, "/f"], environment: env, timeout: 60)
-        }
+        try await applyRegistrySettings(runner: runner, environment: env)
         await runner.waitForIdle(environment: env, timeout: 120)
         try isolate(prefix: paths.prefixDir)
 
@@ -86,6 +67,28 @@ public enum PrefixBuilder {
         }
         let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)
         try marker.write(paths.prefixMarker)
+    }
+
+    private static func applyRegistrySettings(runner: WineRunner, environment: [String: String]) async throws {
+        // Without a debugger entry Wine can hang in winedbg when a helper service crashes.
+        for key in [
+            #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
+            #"HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
+        ] {
+            try await runner.runChecked(["reg", "add", key, "/v", "Auto", "/t", "REG_SZ", "/d", "0", "/f"], environment: environment, timeout: 60)
+            try await runner.runChecked(["reg", "add", key, "/v", "Debugger", "/t", "REG_SZ", "/d", "", "/f"], environment: environment, timeout: 60)
+        }
+
+        // Ensure CoreAudio is explicitly active for both output and MacBook microphone input (mmdevapi / DirectSoundCapture).
+        let drivers = #"HKCU\Software\Wine\Drivers"#
+        try await runner.runChecked(["reg", "add", drivers, "/v", "Audio", "/t", "REG_SZ", "/d", "coreaudio", "/f"], environment: environment, timeout: 60)
+
+        // Audio buffering that keeps the game's sound free of crackle on macOS (values measured on Apple silicon).
+        let directSound = #"HKCU\Software\Wine\DirectSound"#
+        for (name, value) in [("HelMargin", "10"), ("MaxHardwareChannels", "16"), ("SndQueueMax", "20"),
+                              ("DefaultBitsPerSample", "16"), ("DefaultSampleRate", "44100")] {
+            try await runner.runChecked(["reg", "add", directSound, "/v", name, "/t", "REG_DWORD", "/d", value, "/f"], environment: environment, timeout: 60)
+        }
     }
 
     /// The prefix exists and looks like a complete Wine prefix. (Whether it needs a Wine update is `needsUpdate`.)
@@ -102,16 +105,27 @@ public enum PrefixBuilder {
         return marker.checksum != RuntimeManifest.current.engine.sha256 || marker.patchRevision != RuntimeManifest.current.patchRevision
     }
 
-    /// Anything the user would lose by deleting the prefix: an installed Steam library or game.
+    /// Anything the user would lose by deleting the prefix: an installed Steam library, game, or saves/profiles.
     static func hasUserData(paths: SteppePaths) -> Bool {
+        let fm = FileManager.default
         let apps = paths.steamApps
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
-        return !entries.isEmpty || FileManager.default.fileExists(atPath: paths.appManifestURL(appID: RuntimeManifest.current.steam.appID).path)
+        let commonEntries = (try? fm.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
+        if !commonEntries.isEmpty { return true }
+        if fm.fileExists(atPath: paths.appManifestURL(appID: paths.profile.steamAppID).path) { return true }
+        if let docs = paths.gameDocumentsDir,
+           let docEntries = try? fm.contentsOfDirectory(atPath: docs.path),
+           !docEntries.filter({ !$0.hasPrefix(".") }).isEmpty {
+            return true
+        }
+        return false
     }
 
-    /// Lets a newer engine adopt an existing prefix (`wineboot -u`) without touching Steam or the game.
+    /// Lets a newer engine adopt an existing prefix (`wineboot -u`) and refresh registry settings without touching Steam or the game.
     public static func update(runner: WineRunner, environment: [String: String]) async throws {
-        try await runner.run(["wineboot", "-u"], environment: environment, timeout: 600)
+        try await runner.runChecked(["wineboot", "-u"], environment: environment, timeout: 600)
+        await runner.waitForIdle(environment: environment, timeout: 120)
+        try isolate(prefix: runner.paths.prefixDir)
+        try await applyRegistrySettings(runner: runner, environment: environment)
         await runner.waitForIdle(environment: environment, timeout: 120)
         try isolate(prefix: runner.paths.prefixDir)
         let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)

@@ -1,5 +1,7 @@
 /* Steppe user interface strings. The English text is the key. */
 "%@ active, %@ skipped (game version differs)" = "%@ active, %@ skipped (game version differs)";
+"%@ closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "%@ closed right after starting. If this keeps happening, use Settings → Export Diagnostics.";
+"%@ closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "%@ closed unexpectedly at %@. Try another resolution preset or Settings → Repair.";
 "%@ did not finish in time" = "%@ did not finish in time";
 "%@ failed (exit %d)" = "%@ failed (exit %d)";
 "%@ free" = "%@ free";
@@ -12,6 +14,7 @@
 "Active" = "Active";
 "Advanced" = "Advanced";
 "Allow Microphone" = "Allow Microphone";
+"Allow voice chat (microphone)" = "Allow voice chat (microphone)";
 "Allowed" = "Allowed";
 "Another copy of Steppe is already working with this installation." = "Another copy of Steppe is already working with this installation.";
 "Applying macOS fixes" = "Applying macOS fixes";
@@ -30,15 +33,15 @@
 "Click Install in the Steam window" = "Click Install in the Steam window";
 "Click Install in the Steam window. Steam then downloads the game here. This can take a while." = "Click Install in the Steam window. Steam then downloads the game here. This can take a while.";
 "Copy Diagnostics" = "Copy Diagnostics";
-"Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics.";
-"Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair.";
 "Cossacks 3 did not start. Check the Steam window for a prompt and try again." = "Cossacks 3 did not start. Check the Steam window for a prompt and try again.";
 "Cossacks 3 is running. Steppe tidies up when you quit the game." = "Cossacks 3 is running. Steppe tidies up when you quit the game.";
 "Cossacks 3 is still running" = "Cossacks 3 is still running";
+"Could not access the installation folder (%@)." = "Could not access the installation folder (%@).";
 "Could not start %@" = "Could not start %@";
 "Creating the Windows environment" = "Creating the Windows environment";
 "Denied" = "Denied";
 "Diagnostics saved. Personal data is removed from the file." = "Diagnostics saved. Personal data is removed from the file.";
+"Disconnected" = "Disconnected";
 "Download and install updates automatically" = "Download and install updates automatically";
 "Download Cossacks 3" = "Download Cossacks 3";
 "Download the game engine" = "Download the game engine";
@@ -47,6 +50,7 @@
 "Downloading the Wine engine" = "Downloading the Wine engine";
 "Downloads a Wine-based engine (about 250 MB) from its official source and checks it" = "Downloads a Wine-based engine (about 250 MB) from its official source and checks it";
 "Downloads continue where they stopped the next time you open Steppe." = "Downloads continue where they stopped the next time you open Steppe.";
+"Enable speed patches" = "Enable speed patches";
 "Export Diagnostics" = "Export Diagnostics";
 "Faster geometry code (experimental)" = "Faster geometry code (experimental)";
 "Force Quit Game" = "Force Quit Game";
@@ -66,12 +70,16 @@
 "Launching Cossacks 3" = "Launching Cossacks 3";
 "Lowest resolution. Smoothest on any Mac." = "Lowest resolution. Smoothest on any Mac.";
 "Maintenance" = "Maintenance";
+"Maintenance is still running" = "Maintenance is still running";
 "Microphone access" = "Microphone access";
+"Move HUD clear of the camera housing" = "Move HUD clear of the camera housing";
+"Multithreaded game engine" = "Multithreaded game engine";
 "Native" = "Native";
 "Never" = "Never";
 "Not available yet" = "Not available yet";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk.";
 "Not requested yet" = "Not requested yet";
+"Off by default. Turn this on only if you use in-game voice chat." = "Off by default. Turn this on only if you use in-game voice chat.";
 "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure." = "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure.";
 "Open Microphone Settings" = "Open Microphone Settings";
 "Open Steppe Folder" = "Open Steppe Folder";
@@ -102,7 +110,7 @@
 "Restart Now" = "Restart Now";
 "Restart Steppe to apply the language." = "Restart Steppe to apply the language.";
 "Restarting Steam" = "Restarting Steam";
-"Restore Original Audio Files" = "Restore Original Audio Files";
+"Restore Original Game Files" = "Restore Original Game Files";
 "Restored %@ original files. They are replaced again on the next launch." = "Restored %@ original files. They are replaced again on the next launch.";
 "Right now" = "Right now";
 "Rosetta 2 is needed" = "Rosetta 2 is needed";
@@ -138,7 +146,10 @@
 "Steppe runs the Windows version of the game through Rosetta, Apple's translation layer. macOS will ask for your password to install it." = "Steppe runs the Windows version of the game through Rosetta, Apple's translation layer. macOS will ask for your password to install it.";
 "The downloaded file failed its integrity check." = "The downloaded file failed its integrity check.";
 "The downloaded files were not laid out as expected. Try again." = "The downloaded files were not laid out as expected. Try again.";
+"The downloaded Steam installer was not a valid Windows executable." = "The downloaded Steam installer was not a valid Windows executable.";
+"The external drive \"%@\" is not connected. Reconnect it or choose another location." = "The external drive \"%@\" is not connected. Reconnect it or choose another location.";
 "The server answered with HTTP %d." = "The server answered with HTTP %d.";
+"The server sent an unexpected response." = "The server sent an unexpected response.";
 "The Steam installer finished but Steam was not installed." = "The Steam installer finished but Steam was not installed.";
 "The Windows environment could not be created. Please try again." = "The Windows environment could not be created. Please try again.";
 "The Windows environment is damaged but contains your game. Steppe will not delete it. Use Settings → Uninstall Everything to start over, or ask for help on the project page." = "The Windows environment is damaged but contains your game. Steppe will not delete it. Use Settings → Uninstall Everything to start over, or ask for help on the project page.";
@@ -147,6 +158,7 @@
 "This deletes Steppe's engine, the Windows environment, Steam and the downloaded game from this Mac. Your Steam account and Steam Cloud saves are not affected." = "This deletes Steppe's engine, the Windows environment, Steam and the downloaded game from this Mac. Your Steam account and Steam Cloud saves are not affected.";
 "This Mac can't run Steppe" = "This Mac can't run Steppe";
 "Try Again" = "Try Again";
+"Unavailable" = "Unavailable";
 "Uninstall" = "Uninstall";
 "Uninstall everything?" = "Uninstall everything?";
 "Uninstall Everything…" = "Uninstall Everything…";
@@ -154,6 +166,8 @@
 "Updates" = "Updates";
 "Updating the Windows environment" = "Updating the Windows environment";
 "Version" = "Version";
+"Wait a moment for Steppe to finish cleaning up, or quit anyway." = "Wait a moment for Steppe to finish cleaning up, or quit anyway.";
+"Waiting for Steam update to finish" = "Waiting for Steam update to finish";
 "Waiting for Steam — sign in there if it asks" = "Waiting for Steam — sign in there if it asks";
 "Windows environment" = "Windows environment";
 "Writes per-frame timings to the logs folder, useful for benchmarks and bug reports." = "Writes per-frame timings to the logs folder, useful for benchmarks and bug reports.";

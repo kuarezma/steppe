@@ -28,7 +28,7 @@ typedef struct { int left,top,right,bottom; } RECT;
 #define MK_LBUTTON 1
 #define MAKELPARAM(x,y) ((LPARAM)((x)|((y)<<16)))
 static const char *image="C:\\games\\cossacks.exe";
-static int owner_ok=1,open_ok=1,query_ok=1,posts,closes,buttons=1;
+static int owner_ok=1,open_ok=1,query_ok=1,posts,closes,buttons=1,main_visible=1,win_w=1280,win_h=720;
 static DWORD GetWindowThreadProcessId(HWND w,DWORD *pid) { (void)w;*pid=owner_ok?123:0;return owner_ok; }
 static HANDLE OpenProcess(DWORD access,BOOL inherit,DWORD pid) {
  assert(access==PROCESS_QUERY_LIMITED_INFORMATION && !inherit && pid==123);
@@ -41,13 +41,18 @@ static BOOL QueryFullProcessImageNameA(HANDLE h,DWORD flags,char *path,DWORD *n)
 static BOOL CloseHandle(HANDLE h) { (void)h;closes++;return TRUE; }
 static int lstrcmpA(const char *a,const char *b) { return strcmp(a,b); }
 static int lstrcmpiA(const char *a,const char *b) { return strcasecmp(a,b); }
-static BOOL IsWindowVisible(HWND w) { (void)w;return TRUE; }
-static void GetClassNameA(HWND w,char *s,int n) { snprintf(s,(size_t)n,"%s",w==(HWND)(uintptr_t)1?"TMessageForm":"TButton"); }
+static BOOL IsWindowVisible(HWND w) { return w==(HWND)(uintptr_t)3 ? main_visible : TRUE; }
+static void GetClassNameA(HWND w,char *s,int n) {
+ if (w==(HWND)(uintptr_t)1) snprintf(s,(size_t)n,"%s","TMessageForm");
+ else if (w==(HWND)(uintptr_t)3) snprintf(s,(size_t)n,"%s","TGameForm");
+ else snprintf(s,(size_t)n,"%s","TButton");
+}
 static void GetWindowTextA(HWND w,char *s,int n) { snprintf(s,(size_t)n,"%s",w==(HWND)(uintptr_t)1?"Cossacks III":"OK"); }
 static void EnumChildWindows(HWND w,BOOL (*callback)(HWND,LPARAM),LPARAM p) {
  (void)w;for(int i=0;i<buttons;i++)callback((HWND)(uintptr_t)2,p);
 }
 static void GetClientRect(HWND w,RECT *r) { (void)w;*r=(RECT){0,0,100,30}; }
+static BOOL GetWindowRect(HWND w,RECT *r) { (void)w;*r=(RECT){0,0,win_w,win_h};return TRUE; }
 static void PostMessageA(HWND w,int msg,int key,LPARAM pos) { (void)w;(void)msg;(void)key;(void)pos;posts++; }
 '''
 suffix = r'''
@@ -66,7 +71,27 @@ int main(void) {
  assert(inspect_window((HWND)(uintptr_t)1,(LPARAM)&dismissed)==TRUE && !posts);
  buttons=1;image="C:\\games\\cossacks.exe.backup";
  assert(inspect_window((HWND)(uintptr_t)1,(LPARAM)&dismissed)==TRUE && !posts);
- puts("PASS dialog ownership: foreign process ignored, case-insensitive executable, API failures, first-close exit");
+
+ image="C:\\games\\cossacks.exe";
+ struct poll_state st={0,0};
+ win_w=400;win_h=300;
+ assert(inspect_poll_window((HWND)(uintptr_t)3,(LPARAM)&st)==TRUE && !st.main_window_visible && !st.dismissed);
+ win_w=1280;win_h=720;
+ assert(inspect_poll_window((HWND)(uintptr_t)3,(LPARAM)&st)==TRUE && st.main_window_visible && !st.dismissed);
+ st=(struct poll_state){0,0};image="C:\\other\\app.exe";
+ assert(inspect_poll_window((HWND)(uintptr_t)3,(LPARAM)&st)==TRUE && !st.main_window_visible);
+ image="C:\\games\\cossacks.exe";
+ assert(inspect_poll_window((HWND)(uintptr_t)1,(LPARAM)&st)==FALSE && st.dismissed && posts==2);
+
+ DWORD since=0;int tracking=0;
+ assert(!check_main_window_stable(1,1000,&since,&tracking) && tracking==1 && since==1000);
+ assert(!check_main_window_stable(1,10999,&since,&tracking));
+ assert(check_main_window_stable(1,11000,&since,&tracking));
+ assert(!check_main_window_stable(0,11200,&since,&tracking) && tracking==0);
+ assert(!check_main_window_stable(1,0xFFFFF800u,&since,&tracking));
+ assert(check_main_window_stable(1,1500,&since,&tracking));
+
+ puts("PASS dialog ownership + main window stability: foreign process ignored, case-insensitive executable, API failures, first-close exit, >=640x480 10s dwell");
  return 0;
 }
 '''

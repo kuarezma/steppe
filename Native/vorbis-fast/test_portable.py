@@ -32,7 +32,7 @@ pcm_prefix = r'''
 #include <stdio.h>
 #include <string.h>
 typedef int64_t ogg_int64_t;
-typedef struct { int channels; long rate; void *codec_setup; } vorbis_info;
+typedef struct { int channels; long rate; long bitrate_nominal; void *codec_setup; } vorbis_info;
 typedef struct { char **user_comments; int *comment_lengths; int comments; char *vendor; } vorbis_comment;
 typedef struct { int unused; } ov_callbacks;
 typedef struct { void *datasource; void *padding; ogg_int64_t offset, end; } OggVorbis_File;
@@ -42,16 +42,32 @@ static void EnterCriticalSection(CRITICAL_SECTION *p) { (void)p; }
 static void LeaveCriticalSection(CRITICAL_SECTION *p) { (void)p; }
 static int IsBadReadPtr(const void *p,size_t n) { (void)p;(void)n;return 0; }
 static int real_closes, real_opens, real_reads, decode_complete, seek_failure;
-static vorbis_info info = {2,48000,NULL};
+static vorbis_info info = {2,48000,192000,NULL};
 static vorbis_comment comment;
+static long real_ov_bitrate(OggVorbis_File *v,int i) { (void)v;(void)i;return 192000; }
+static long real_ov_bitrate_instant(OggVorbis_File *v) { (void)v;return 192000; }
 static int real_ov_clear(OggVorbis_File *v) { if(v->datasource) real_closes++;return 0; }
+static int real_ov_open(FILE *f,OggVorbis_File *v,const char *i,long n) { (void)f;(void)v;(void)i;(void)n;real_opens++;return 0; }
 static int real_ov_open_callbacks(void *d,OggVorbis_File *v,const char *i,long n,ov_callbacks c) {
  (void)i;(void)n;(void)c;v->datasource=d;real_opens++;return 0;
 }
 static ogg_int64_t real_ov_pcm_total(OggVorbis_File *v,int i) { (void)v;(void)i;return 4096; }
+static ogg_int64_t real_ov_raw_total(OggVorbis_File *v,int i) { (void)v;(void)i;return 16384; }
+static double real_ov_time_total(OggVorbis_File *v,int i) { (void)v;(void)i;return 4096.0/48000.0; }
 static int real_ov_pcm_seek(OggVorbis_File *v,ogg_int64_t p) { (void)v;(void)p;return seek_failure; }
+static int real_ov_pcm_seek_page(OggVorbis_File *v,ogg_int64_t p) { (void)v;(void)p;return seek_failure; }
 static int real_ov_raw_seek(OggVorbis_File *v,ogg_int64_t p) { (void)v;(void)p;return 0; }
 static int real_ov_time_seek(OggVorbis_File *v,double p) { (void)v;(void)p;return 0; }
+static int real_ov_time_seek_page(OggVorbis_File *v,double p) { (void)v;(void)p;return 0; }
+static ogg_int64_t real_ov_pcm_tell(OggVorbis_File *v) { (void)v;return 0; }
+static ogg_int64_t real_ov_raw_tell(OggVorbis_File *v) { (void)v;return 0; }
+static double real_ov_time_tell(OggVorbis_File *v) { (void)v;return 0.0; }
+static long real_ov_seekable(OggVorbis_File *v) { (void)v;return 1; }
+static long real_ov_serialnumber(OggVorbis_File *v,int i) { (void)v;(void)i;return 1; }
+static long real_ov_streams(OggVorbis_File *v) { (void)v;return 1; }
+static int real_ov_test(FILE *f,OggVorbis_File *v,const char *i,long n) { (void)f;(void)v;(void)i;(void)n;return 0; }
+static int real_ov_test_callbacks(void *d,OggVorbis_File *v,const char *i,long n,ov_callbacks c) { (void)d;(void)v;(void)i;(void)n;(void)c;return 0; }
+static int real_ov_test_open(OggVorbis_File *v) { (void)v;return 0; }
 static vorbis_info *real_ov_info(OggVorbis_File *v,int i) { (void)v;(void)i;return &info; }
 static vorbis_comment *real_ov_comment(OggVorbis_File *v,int i) { (void)v;(void)i;return &comment; }
 static long real_ov_read(OggVorbis_File *v,char *b,int n,int e,int w,int s,int *bs) {
@@ -82,6 +98,23 @@ int main(void) {
  assert(ov_pcm_seek(&vf,-1)==0 && st->read_byte_offset==0);
  assert(ov_pcm_seek(&vf,99999)==0 && st->read_byte_offset==sizeof pcm);
  assert(ov_raw_seek(&vf,0)==0);assert(ov_time_seek(&vf,0)==0);
+ assert(ov_pcm_seek_page(&vf,100)==0 && ov_pcm_tell(&vf)==100 && ov_raw_tell(&vf)==400);
+ assert(ov_time_seek_page(&vf,0.0)==0 && ov_time_tell(&vf)==0.0);
+ assert(ov_seekable(&vf)==1 && ov_streams(&vf)==1 && ov_serialnumber(&vf,-1)==1 && ov_test_open(&vf)==0);
+ assert(ov_raw_total(&vf,-1)==(ogg_int64_t)sizeof pcm && ov_time_total(&vf,-1)>0.0);
+ entry.vi.bitrate_nominal=192000;
+ assert(ov_bitrate(&vf,-1)==192000 && ov_bitrate_instant(&vf)==192000);
+ assert(ov_read(&vf,(char *)out,4,0,4,1,&bs)==OV_EINVAL);
+ // Verify BE16 and 8-bit conversion paths on known 16-bit signed LE sample 0x0102 -> 258
+ pcm[0]=0x02; pcm[1]=0x01;
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,2,1,2,1,&bs)==2);
+ assert(out[0]==0x01 && out[1]==0x02);
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,1,0,1,0,&bs)==1);
+ assert(out[0]==(uint8_t)((int)(int8_t)0x01 + 128));
+ assert(ov_pcm_seek(&vf,100)==0 && ov_raw_tell(&vf)==400);
+ assert(ov_raw_seek(&vf,12)==0 && ov_raw_tell(&vf)==12 && ov_pcm_tell(&vf)==3);
+ assert(ov_raw_seek(&vf,13)==0 && ov_raw_tell(&vf)==12);
+ assert(ov_raw_seek(&vf,99999999)==0 && ov_raw_tell(&vf)==(ogg_int64_t)entry.pcm_bytes);
  assert(ov_info(&vf,-1)==&entry.vi && ov_comment(&vf,-1)==&entry.vc);
  assert(ov_pcm_total(&vf,-1)==entry.pcm_total);assert(ov_clear(&vf)==0);
  assert(!is_filename_cached(NULL));
@@ -116,9 +149,15 @@ int main(void) {
  for(size_t i=0;i<sizeof out;i++) assert(out[i]==0x35);
  ov_clear(game_vf);assert(real_closes==1);
  free(g_cache[0].pcm_data);
+ char longname[600]; memset(longname,'a',sizeof longname-5); strcpy(longname+sizeof longname-5,".ogg");
+ *(const char **)(object.bytes+8)=longname;
+ g_cache_count=0;
+ assert(ov_open_callbacks(datasource,game_vf,NULL,0,callbacks)==0);
+ assert(g_cache_count==0 && !get_cached_state(game_vf));
+ assert(ov_open(NULL,&vf,NULL,0)==0 && ov_test(NULL,&vf,NULL,0)==0 && ov_test_callbacks(NULL,&vf,NULL,0,(ov_callbacks){0})==0);
  puts("PASS successful miss: PCM published, cursor starts at zero, datasource closed once");
  puts("PASS failed open: datasource stays caller-owned, reservation rolled back");
- puts("PASS cached PCM: ordered 4096-byte reads, repeated EOF, seek and clear");
+ puts("PASS cached PCM: ordered 4096-byte reads, repeated EOF, seek, clear, metadata wrappers, format conversions, long-path bypass");
  return 0;
 }
 '''

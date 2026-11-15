@@ -18,7 +18,7 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: phaseKey)
         .task { await controller.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            Task { await controller.refresh() }
+            Task { await controller.refresh(allowAutoSetup: false) }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).debounce(for: .seconds(1), scheduler: RunLoop.main)) { _ in
             controller.handleDisplayChange()

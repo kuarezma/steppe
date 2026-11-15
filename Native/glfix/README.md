@@ -49,8 +49,4 @@ sampling scenario is optional and is not run by `make test`.
 
 ## Known limitations
 
-`CGLDestroyContext` is not intercepted, so the pbuffer association table can retain
-a stale context pointer after destruction. The exec hooks in `glfix.c` use `setenv`
-to propagate injection settings; that environment mutation is not safe against
-concurrent environment access. These lifecycle and exec-hook changes are outside
-the scope of this fix.
+`pbemu.c` intercepts `CGLDestroyContext` and `CGLReleaseContext` via `DYLD_INTERPOSE`; if a framework releases the final context reference through an internal path without calling the exported `CGLDestroyContext` or `CGLReleaseContext` symbols, or if two threads race the non-atomic `CGLGetContextRetainCount` check on final release, the association entry can remain stale and alias a later context allocated at the same address. The `execv` and `execvp` hooks in `glfix.c` use `setenv` to propagate injection settings; that environment mutation is not safe against concurrent environment access.

@@ -20,11 +20,11 @@ struct SteppeApp: App {
                 .environmentObject(controller)
                 .environmentObject(updater)
                 .onAppear { delegate.controller = controller }
-                .onChange(of: controller.phase) { _, phase in
-                    switch phase {
-                    case .settingUp, .playing: UpdaterModel.setBusy(true)
-                    default: UpdaterModel.setBusy(false)
-                    }
+                .onChange(of: controller.phase) { _, _ in
+                    UpdaterModel.setBusy(controller.isBusy)
+                }
+                .onChange(of: controller.isMaintaining) { _, _ in
+                    UpdaterModel.setBusy(controller.isBusy)
                 }
         }
         .windowStyle(.hiddenTitleBar)
@@ -56,15 +56,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let controller else { return .terminateNow }
         let message: (String, String)?
-        switch controller.phase {
-        case .settingUp:
-            message = (String(localized: "Setup is still running"),
-                       String(localized: "Downloads continue where they stopped the next time you open Steppe."))
-        case .playing:
-            message = (String(localized: "Cossacks 3 is still running"),
-                       String(localized: "If you quit Steppe now, the game keeps running but Steam will not be closed for you afterwards."))
-        default:
-            message = nil
+        if controller.isMaintaining {
+            message = (String(localized: "Maintenance is still running"),
+                       String(localized: "Wait a moment for Steppe to finish cleaning up, or quit anyway."))
+        } else {
+            switch controller.phase {
+            case .settingUp:
+                message = (String(localized: "Setup is still running"),
+                           String(localized: "Downloads continue where they stopped the next time you open Steppe."))
+            case .playing:
+                message = (String(localized: "Cossacks 3 is still running"),
+                           String(localized: "If you quit Steppe now, the game keeps running but Steam will not be closed for you afterwards."))
+            default:
+                message = nil
+            }
         }
         guard let (title, info) = message else { return .terminateNow }
         let alert = NSAlert()

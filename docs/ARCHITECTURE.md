@@ -45,12 +45,13 @@ Every stage checks disk state first, so setup is resumable and idempotent. Marke
 
 1. Stop Steam/Wine of this engine if running (so graphics fixes get injected into Steam and the game).
 2. Re-apply prefix isolation.
-3. Run `list-modes.exe` inside the prefix, plan the render resolution for the monitor Windows reports as primary (`ResolutionPlanner`), snap it to a mode Windows lists (`DisplayModes.snap`, with aspect-ratio ultrawide fallback) and write it into every existing `profile.cfg` (`ProfileTuner` using lossless ISO-Latin-1 round-trip, backup `profile.cfg.steppe-orig`). Without the helper, the Mac's menu-bar display is used unchecked.
+3. Probe Windows monitor modes with `list-modes.exe` inside the prefix (if not already cached for the active display) and plan the render resolution (`ResolutionPlanner` + `DisplayModes.snap`, with aspect-ratio ultrawide fallback; without the helper, the Mac's primary display size is used unchecked).
 4. `GameBootstrap` creates first-run files if they are missing (see below).
-5. `GameFiles` replaces `ogg.dll`/`vorbis.dll`/`vorbisfile.dll` only if they are still the verified originals (backup `*.steppe-orig`).
-6. Start `Steam.exe -applaunch 333420` with `DYLD_INSERT_LIBRARIES=libglfix.dylib`, `GLFIX_REMAP=2`, `WINEESYNC=0`.
-7. Start `dismiss-dialog.exe` inside the prefix (presses OK on the game's informational startup box).
-8. Watch for `cossacks.exe`; when it exits, `LaunchOutcome` classifies the session duration and log tail for early crashes or access violation signatures (`00427A2B`), re-applies tuning, quits Steam gracefully (Cloud sync) and makes sure no Wine process is left.
+5. `ProfileTuner` writes the planned resolution and `multithreadedEngine` setting into every existing `profile.cfg` (lossless ISO-Latin-1 round-trip, backup `profile.cfg.steppe-orig`).
+6. When speed patches are enabled, `GameFiles` replaces `ogg.dll`/`vorbis.dll`/`vorbisfile.dll` if they are the verified originals or older Steppe builds (backup `*.steppe-orig`); when disabled, `GameFiles.restoreSpeedLibraries` restores those three DLLs while leaving Notch HUD backups intact. `GameFiles.applyNotchHUD` then applies or restores the Notch HUD layout according to `enableNotchHUD` and display notch detection.
+7. Ensure Wine engine audio entitlements and optional macOS microphone permission, then start `Steam.exe -applaunch 333420` with `WINEESYNC=0` (and `DYLD_INSERT_LIBRARIES=libglfix.dylib`, `GLFIX_REMAP=2` when speed patches are enabled).
+8. Poll until `cossacks.exe` is running (allowing up to 600 s normally, or up to 3600 s while Steam downloads a game update).
+9. Once `cossacks.exe` is running, start `dismiss-dialog.exe` inside the prefix (presses OK on the game's informational startup box), then watch `cossacks.exe` until exit (`finishSession`): re-apply `ProfileTuner` (for any profile created during the session), shut down Steam gracefully (Cloud sync, making sure no Wine process is left) if `settings.quitSteamAfterGame` is enabled, classify the session duration and `game-session.log` tail via `LaunchOutcome.classify` for early crashes or access violation signatures (`00427A2B`), and reload `patchReport`.
 
 ## Core Reliability Subsystems
 
@@ -76,7 +77,7 @@ Wine rewrites the title and hides the environment of its child processes, so "wh
 
 - The prefix has no `Z:` drive, `mountmgr` is disabled and user folders are plain directories.
 - The Windows user is named `steppe` for new prefixes.
-- Logs and diagnostics go through `Redaction` (home path, user name, SteamID64, e‑mail, IPv4, token-like values).
+- Logs and diagnostics go through `Redaction` (home path, external volume names, user name, SteamID64, e‑mail, IPv4, token-like values).
 - Nothing is uploaded anywhere.
 
 ## Why the first-run files exist

@@ -101,7 +101,7 @@ final class ProcessRunnerTests: XCTestCase {
 }
 
 /// Serves a fixed payload and honours `Range` requests; can be told to fail the first N requests.
-final class StubServer: URLProtocol {
+final class StubServer: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var payload = Data()
     nonisolated(unsafe) static var failuresRemaining = 0
     nonisolated(unsafe) static var ignoreRange = false

@@ -16,10 +16,12 @@ public final class Log: @unchecked Sendable {
     public init() {}
 
     /// Never blocks the caller: the first access to a removable volume can wait on a macOS permission prompt.
-    public func configure(fileURL: URL) {
+    public func configure(fileURL: URL?) {
         queue.async {
             self.fileURL = fileURL
-            try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let fileURL {
+                try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            }
         }
     }
 
@@ -28,8 +30,9 @@ public final class Log: @unchecked Sendable {
     public func error(_ message: @autoclosure () -> String) { write("ERROR", message()) }
 
     private func write(_ level: String, _ message: String) {
-        let line = "\(formatter.string(from: Date())) [\(level)] \(Redaction.redact(message))\n"
+        let now = Date()
         queue.async { [self] in
+            let line = "\(formatter.string(from: now)) [\(level)] \(Redaction.redact(message))\n"
             guard let url = fileURL else { return }
             rotateIfNeeded(url)
             if !FileManager.default.fileExists(atPath: url.path) {
@@ -50,10 +53,11 @@ public final class Log: @unchecked Sendable {
         try? FileManager.default.moveItem(at: url, to: old)
     }
 
-    /// Last `count` lines of the log, already redacted.
+    /// Last `count` lines of the log, already redacted. Uses lossy UTF-8 decoding so a stray byte never drops the file.
     public func tail(lines count: Int = 200) -> String {
         queue.sync {
-            guard let url = fileURL, let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+            guard let url = fileURL, let data = try? Data(contentsOf: url) else { return "" }
+            let text = String(decoding: data, as: UTF8.self)
             return text.split(separator: "\n", omittingEmptySubsequences: true).suffix(count).joined(separator: "\n")
         }
     }

@@ -359,14 +359,24 @@ public enum GameFiles {
         return statuses
     }
 
+    /// Puts ONLY the original audio libraries back (leaves HUD files untouched; used when speed patches are disabled).
+    @discardableResult
+    public static func restoreSpeedLibraries(in gameDir: URL) -> Int {
+        restoreItems(libraryNames, in: gameDir)
+    }
+
     /// Puts the original libraries and HUD files back (used by "Restore original game files").
     @discardableResult
     public static func restoreOriginals(in gameDir: URL) -> Int {
+        restoreItems(libraryNames + [hudMatRelativePath, resourcePanelRelativePath], in: gameDir)
+    }
+
+    private static func restoreItems(_ names: [String], in gameDir: URL) -> Int {
         let fm = FileManager.default
         var restored = 0
         var record = readInstalledRecord(in: gameDir)
         let hudPaths = Set([hudMatRelativePath, resourcePanelRelativePath])
-        for name in libraryNames + [hudMatRelativePath, resourcePanelRelativePath] {
+        for name in names {
             let target = gameDir.appendingPathComponent(name)
             let backup = target.appendingPathExtension("steppe-orig")
             guard fm.fileExists(atPath: backup.path) else { continue }
@@ -425,6 +435,8 @@ public struct PatchReport: Equatable, Sendable {
         self.skipped = skipped
         self.disabled = disabled
     }
+
+    public static let empty = PatchReport(applied: 0, skipped: 0, disabled: 0)
 
     public var isEmpty: Bool { applied == 0 && skipped == 0 && disabled == 0 }
 

@@ -20,12 +20,24 @@ enum Diagnostics {
     @MainActor
     static func export(controller: SteppeController) throws -> URL {
         let snapshot = controller.diagnosticsSnapshot
-        let text = Redaction.redact(report(for: snapshot))
+        let text = sanitizedReport(for: snapshot)
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let url = snapshot.paths.logsDir.appendingPathComponent("diagnostics-\(stamp).txt")
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(text.utf8).write(to: url, options: .atomic)
         return url
+    }
+
+    static func sanitizedReport(for snapshot: DiagnosticsSnapshot) -> String {
+        var raw = report(for: snapshot)
+        let comps = snapshot.paths.root.standardizedFileURL.pathComponents
+        if comps.count > 2, comps[1] == "Volumes", !comps[2].isEmpty {
+            let vol = comps[2]
+            raw = raw.replacingOccurrences(of: "/Volumes/\(vol)", with: "/Volumes/<volume>")
+            raw = raw.replacingOccurrences(of: "\"\(vol)\"", with: "\"<volume>\"")
+            raw = raw.replacingOccurrences(of: "\\\"\(vol)\\\"", with: "\\\"<volume>\\\"")
+        }
+        return Redaction.redact(raw)
     }
 
     static func report(for s: DiagnosticsSnapshot) -> String {
@@ -43,7 +55,7 @@ enum Diagnostics {
             lines.append("Windows monitor: not probed yet")
         }
         lines.append("Render resolution: \(s.resolution) (preset: \(s.settings.preset.rawValue), custom: \(s.settings.useCustomResolution))")
-        lines.append("Settings: quitSteamAfterGame=\(s.settings.quitSteamAfterGame) mathPatches=\(s.settings.experimentalMathPatches) frameTimes=\(s.settings.recordFrameTimes)")
+        lines.append("Settings: quitSteamAfterGame=\(s.settings.quitSteamAfterGame) speedPatches=\(s.settings.enableSpeedPatches) notchHUD=\(s.settings.enableNotchHUD) multithreaded=\(s.settings.multithreadedEngine) mic=\(s.settings.enableMicrophone) mathPatches=\(s.settings.experimentalMathPatches) frameTimes=\(s.settings.recordFrameTimes)")
         lines.append("Microphone permission: \(s.microphoneStatus.rawValue)")
         lines.append("Free disk: \(ByteCountFormatter.string(fromByteCount: s.freeBytes, countStyle: .file))")
         lines.append("Engine: \(RuntimeManifest.current.engine.name), frameworks: \(RuntimeManifest.current.template.name)")
@@ -56,13 +68,13 @@ enum Diagnostics {
             lines.append("Game: not installed")
         }
         lines.append("Prefix isolation leaks: \(s.leaks.isEmpty ? "none" : s.leaks.joined(separator: ", "))")
-        if let patchLog = try? String(contentsOf: s.paths.patchLogFile, encoding: .utf8), !patchLog.isEmpty {
+        if let patchLog = lossyText(at: s.paths.patchLogFile), !patchLog.isEmpty {
             lines.append("Speed patches:")
             lines.append(patchLog)
         }
         for name in ["steam-setup.log", "game-session.log", "dialog-helper.log"] {
             let url = s.paths.logsDir.appendingPathComponent(name)
-            if let text = try? String(contentsOf: url, encoding: .utf8) {
+            if let text = lossyText(at: url) {
                 let tail = text.split(separator: "\n", omittingEmptySubsequences: true)
                     .filter { !$0.contains("hid:") && !$0.contains("[mvk-info]") }
                     .suffix(40).joined(separator: "\n")
@@ -73,9 +85,55 @@ enum Diagnostics {
                 }
             }
         }
+        if let gameDocs = s.paths.gameDocumentsDir,
+           let gameLog = lossyText(at: gameDocs.appendingPathComponent("log.txt")) {
+            let tail = gameLog.split(separator: "\n", omittingEmptySubsequences: true).suffix(40).joined(separator: "\n")
+            if !tail.isEmpty {
+                lines.append("")
+                lines.append("game log.txt (last lines):")
+                lines.append(tail)
+            }
+        }
+        let crashes = recentCrashReports()
+        if !crashes.isEmpty {
+            lines.append("")
+            lines.append("Recent crash reports (last 7 days):")
+            lines.append(contentsOf: crashes)
+        }
         lines.append("")
         lines.append("Recent log:")
         lines.append(Log.shared.tail(lines: 200))
         return lines.joined(separator: "\n")
+    }
+
+    static func lossyText(at url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    static func recentCrashReports(now: Date = Date(), directory: URL? = nil) -> [String] {
+        let fm = FileManager.default
+        let dir = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DiagnosticReports")
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        let cutoff = now.addingTimeInterval(-7 * 24 * 3600)
+        return urls.compactMap { url -> (Date, String)? in
+            let name = url.lastPathComponent
+            let lower = name.lowercased()
+            guard lower.hasSuffix(".ips") || lower.hasSuffix(".crash"),
+                  lower.contains("wine") || lower.contains("steppe") || lower.contains("cossacks") else {
+                return nil
+            }
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            guard modified >= cutoff else { return nil }
+            let preview = (lossyText(at: url) ?? "").split(separator: "\n", omittingEmptySubsequences: true).prefix(12).joined(separator: " | ")
+            return (modified, preview.isEmpty ? name : "\(name): \(preview)")
+        }
+        .sorted { $0.0 > $1.0 }
+        .prefix(3)
+        .map(\.1)
     }
 }

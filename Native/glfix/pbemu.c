@@ -180,20 +180,54 @@ static CGLError pb_CGLSetPBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLenum fa
     return kCGLBadValue;
   }
   Assoc *a = assoc_for_ctx(ctx);
+  GLuint old_fbo = 0;
   if (a && a->pb != (PBuf *)obj) {
     PBuf *old = a->pb;
+    if (a->ready && a->fbo && CGLGetCurrentContext() == ctx) old_fbo = a->fbo;
     memset(a, 0, sizeof *a);
     a = NULL;
     if (old && old->refs <= 0) gc_pb_locked(old);
   }
-  if (!obj) { pthread_mutex_unlock(&g_pmu); return kCGLNoError; }
+  if (!obj) {
+    pthread_mutex_unlock(&g_pmu);
+    if (old_fbo) glDeleteFramebuffers(1, &old_fbo);
+    return kCGLNoError;
+  }
   if (!a)
     for (int i = 0; i < MAXASSOC; i++)
       if (!g_assoc[i].ctx) { a = &g_assoc[i]; a->ctx = ctx; a->pb = (PBuf *)obj; break; }
   pthread_mutex_unlock(&g_pmu);
+  if (old_fbo) glDeleteFramebuffers(1, &old_fbo);
   return a ? kCGLNoError : kCGLBadAlloc;
 }
 DYLD_INTERPOSE(pb_CGLSetPBuffer, CGLSetPBuffer)
+
+static void detach_ctx_assoc(CGLContextObj ctx) {
+  GLuint old_fbo = 0;
+  if (!ctx) return;
+  pthread_mutex_lock(&g_pmu);
+  Assoc *a = assoc_for_ctx(ctx);
+  if (a) {
+    PBuf *old = a->pb;
+    if (a->ready && a->fbo && CGLGetCurrentContext() == ctx) old_fbo = a->fbo;
+    memset(a, 0, sizeof *a);
+    if (old && old->refs <= 0) gc_pb_locked(old);
+  }
+  pthread_mutex_unlock(&g_pmu);
+  if (old_fbo) glDeleteFramebuffers(1, &old_fbo);
+}
+
+static CGLError pb_CGLDestroyContext(CGLContextObj ctx) {
+  detach_ctx_assoc(ctx);
+  return CGLDestroyContext(ctx);
+}
+DYLD_INTERPOSE(pb_CGLDestroyContext, CGLDestroyContext)
+
+static void pb_CGLReleaseContext(CGLContextObj ctx) {
+  if (ctx && CGLGetContextRetainCount(ctx) <= 1) detach_ctx_assoc(ctx);
+  CGLReleaseContext(ctx);
+}
+DYLD_INTERPOSE(pb_CGLReleaseContext, CGLReleaseContext)
 
 static int caller_is_winemac(const void *ra) {
   Dl_info di;
@@ -311,8 +345,6 @@ DYLD_INTERPOSE(pb_ReadBuffer, glReadBuffer)
 
 static void pb_ShaderSourceARB(GLhandleARB sh, GLsizei count, const GLcharARB **str, const GLint *len);
 static void pb_ShaderSource(GLuint sh, GLsizei count, const GLchar *const *str, const GLint *len);
-static void pb_LinkProgram(GLuint p);
-static void pb_LinkProgramARB(GLhandleARB p);
 void *pbemu_dlsym_wrap(const char *name) {
   if (!name) return NULL;
   if (!strcmp(name, "glBindFramebuffer")) return (void *)pb_BindFramebuffer;
@@ -321,8 +353,6 @@ void *pbemu_dlsym_wrap(const char *name) {
   if (!strcmp(name, "glReadBuffer")) return (void *)pb_ReadBuffer;
   if (!strcmp(name, "glShaderSourceARB")) return (void *)pb_ShaderSourceARB;
   if (!strcmp(name, "glShaderSource")) return (void *)pb_ShaderSource;
-  if (!strcmp(name, "glLinkProgramARB")) return (void *)pb_LinkProgramARB;
-  if (!strcmp(name, "glLinkProgram")) return (void *)pb_LinkProgram;
   return NULL;
 }
 
@@ -438,8 +468,8 @@ DYLD_INTERPOSE(pb_ShaderSourceARB, glShaderSourceARB)
 DYLD_INTERPOSE(pb_ShaderSource, glShaderSource)
 
 void pbemu_forget_program(uintptr_t p);
-static void pb_LinkProgram(GLuint p) { pbemu_forget_program(p); glLinkProgram(p); }
-static void pb_LinkProgramARB(GLhandleARB p) { pbemu_forget_program((uintptr_t)p); glLinkProgramARB(p); }
+__attribute__((unused)) static void pb_LinkProgram(GLuint p) { pbemu_forget_program(p); glLinkProgram(p); }
+__attribute__((unused)) static void pb_LinkProgramARB(GLhandleARB p) { pbemu_forget_program((uintptr_t)p); glLinkProgramARB(p); }
 
 #define MAXBP 8192
 static int16_t g_boneLoc[MAXBP];

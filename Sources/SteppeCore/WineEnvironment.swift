@@ -28,26 +28,36 @@ public struct WineEnvironment: Sendable {
         return env
     }
 
-    /// Environment for playing: GL shim injected, logging off.
+    private static let allowedHostKeys: Set<String> = [
+        "PATH", "HOME", "TMPDIR", "TERM", "COLORTERM", "SHELL",
+        "COMMAND_MODE", "DISPLAY", "XPC_FLAGS", "XPC_SERVICE_NAME",
+        "__CF_USER_TEXT_ENCODING", "__CFBundleIdentifier",
+    ]
+
+    /// Environment for playing: GL shim injected (when speed patches are on), SEH errors logged.
     public func game(settings: AppSettings) -> [String: String] {
         var env = common()
-        env["WINEDEBUG"] = "-all"
-        if let glfix = glfixLibrary, FileManager.default.fileExists(atPath: glfix.path) {
-            env["DYLD_INSERT_LIBRARIES"] = glfix.path
-            env["GLFIX_REMAP"] = "2"
-        }
-        env["STEPPE_PATCH_LOG"] = SteppePaths.patchLogWindowsPath
-        if settings.experimentalMathPatches { env["STEPPE_MATH_PATCHES"] = "1" }
-        if settings.recordFrameTimes {
-            env["GLFIX_FRAMETIMES"] = paths.logsDir.appendingPathComponent("frames.ns").path
+        env["WINEDEBUG"] = "-all,err+seh"
+        if settings.enableSpeedPatches {
+            if let glfix = glfixLibrary, FileManager.default.fileExists(atPath: glfix.path) {
+                env["DYLD_INSERT_LIBRARIES"] = glfix.path
+                env["GLFIX_REMAP"] = "2"
+            }
+            env["C3_VORBIS_CACHE"] = "1"
+            env["STEPPE_PATCH_LOG"] = SteppePaths.patchLogWindowsPath
+            if settings.experimentalMathPatches { env["STEPPE_MATH_PATCHES"] = "1" }
+            if settings.recordFrameTimes {
+                env["GLFIX_FRAMETIMES"] = paths.logsDir.appendingPathComponent("frames.ns").path
+            }
+        } else {
+            env["C3_VORBIS_CACHE"] = "0"
         }
         return env
     }
 
     func common() -> [String: String] {
         var env: [String: String] = [:]
-        for (key, value) in ProcessInfo.processInfo.environment {
-            if key.hasPrefix("WINE") || key.hasPrefix("DYLD_") || key.hasPrefix("GLFIX_") || key.hasPrefix("STEPPE_") { continue }
+        for (key, value) in ProcessInfo.processInfo.environment where Self.allowedHostKeys.contains(key) {
             env[key] = value
         }
         let bin = paths.wineBundle.appendingPathComponent("bin").path

@@ -23,10 +23,10 @@ If the private key is lost, installed copies can never be updated (they would ha
 
 ## Cutting a release
 
-1. Update `CHANGELOG.md` and add `docs/release-notes/<version>.md`.
-2. Make sure `swift test`, `python3 Scripts/extract-strings.py --check` and `make -C Native/glfix test` pass and that you have played a match on a clean install (`steppe-cli setup`, then Play).
-3. **Locally:** `VERSION=0.2.0 Scripts/release.sh` and then the `gh release create …` command it prints.
-   **Or with CI:** push a tag `v0.2.0`; `.github/workflows/release.yml` builds, signs the feed and publishes.
+1. Update `CHANGELOG.md` and add `docs/release-notes/<version>.md`. `Scripts/build-app.sh` derives `CFBundleVersion` deterministically from semantic `VERSION` (`((MAJOR * 1000000 + MINOR * 1000 + PATCH) * 1000 + PRERELEASE_OFFSET)`, where pre-releases `-alpha*`/`-beta*`/`-rc*` use `< 999` and final releases use `999`, e.g. `0.2.0-rc1` -> `2000501`, `0.2.0` -> `2000999`), keeping Sparkle builds strictly monotonic without depending on CI run numbers or git commit counts.
+2. Make sure `swift test`, `python3 Scripts/extract-strings.py --check`, `python3 Scripts/verify-appcast.py --selftest`, `make -C Native/glfix clean test`, `make -C Native/vorbis-fast clean test`, and `make -C Native/dialog-helper clean test` pass and that you have played a match on a clean install (`steppe-cli setup`, then Play).
+3. **Locally:** `VERSION=0.2.0 Scripts/release.sh` (which also embeds release notes and verifies `appcast.xml` via `Scripts/verify-appcast.py`) and then the `gh release create …` command it prints.
+   **Or with CI:** push a tag `v0.2.0`; `.github/workflows/release.yml` runs all tests, signs the feed, verifies `appcast.xml`, uploads a draft release, verifies every asset, and publishes atomically.
 4. Install the previous release, then use *Check for Updates…* to confirm that the update path works.
 
 The app looks for updates at `https://github.com/kuarezma/steppe/releases/latest/download/appcast.xml`, so every release must upload `appcast.xml` as an asset.

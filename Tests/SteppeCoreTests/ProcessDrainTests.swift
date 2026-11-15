@@ -48,7 +48,8 @@ final class ProcessDrainTests: XCTestCase {
 
     func testCancellationReturnsWhileADescendantKeepsThePipeOpen() async throws {
         let script = daemon + " sleep 25"
-        let task = Task { try await ProcessRunner.run(self.shell, arguments: ["-c", script]) }
+        let shell = shell
+        let task = Task { try await ProcessRunner.run(shell, arguments: ["-c", script]) }
         await waitForDaemon()
         task.cancel()
         let started = Date()

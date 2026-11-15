@@ -18,7 +18,7 @@ public enum ProcessFailure: Error, LocalizedError {
         case .launchFailed(let m): return L("Could not start %@", m)
         case .timedOut(let m): return L("%@ did not finish in time", m)
         case .nonZeroExit(let m, let r):
-            return L("%@ failed (exit %d)", m, r.exitCode) + ": " + String(r.stderr.suffix(400))
+            return L("%@ failed (exit %d)", m, r.exitCode) + ": " + Redaction.redact(String(r.stderr.suffix(400)))
         }
     }
 }
@@ -185,15 +185,39 @@ public struct RunningProcess: Sendable, Equatable {
     }
 }
 
+public enum ProcessScanResult: Sendable, Equatable {
+    case ok([RunningProcess])
+    case failed(String)
+}
+
+public enum GameRunningCheck: Sendable, Equatable {
+    case running
+    case notRunning
+    case unknown(String)
+}
+
 public enum ProcessScanner {
+    /// All processes of the current user, preserving `/bin/ps` failure information.
+    public static func listChecked() async -> ProcessScanResult {
+        do {
+            let result = try await ProcessRunner.run(
+                URL(fileURLWithPath: "/bin/ps"),
+                arguments: ["-axo", "pid=,comm=", "-U", String(getuid())],
+                timeout: 15
+            )
+            guard result.succeeded else {
+                return .failed("ps exited \(result.exitCode)")
+            }
+            return .ok(parse(result.stdout))
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
     /// All processes of the current user.
     public static func list() async -> [RunningProcess] {
-        guard let result = try? await ProcessRunner.run(
-            URL(fileURLWithPath: "/bin/ps"),
-            arguments: ["-axo", "pid=,comm=", "-U", String(getuid())],
-            timeout: 15
-        ), result.succeeded else { return [] }
-        return parse(result.stdout)
+        guard case .ok(let list) = await listChecked() else { return [] }
+        return list
     }
 
     static func parse(_ output: String) -> [RunningProcess] {
@@ -208,29 +232,57 @@ public enum ProcessScanner {
     static func executablePath(of pid: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: 4096)
         guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
-        return String(cString: buffer)
+        return String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+    }
+
+    /// Processes started from our Wine engine, preserving scan errors.
+    public static func processesChecked(inEngine bundle: URL) async -> ProcessScanResult {
+        switch await listChecked() {
+        case .failed(let reason):
+            return .failed(reason)
+        case .ok(let all):
+            // proc_pidpath reports the canonical path, so match the symlink-resolved bundle path too. `realpath` is
+            // needed as well: `resolvingSymlinksInPath` drops the /private prefix the kernel reports for /var and /tmp.
+            var candidates = [bundle.path, bundle.resolvingSymlinksInPath().path]
+            if let real = realpath(bundle.path, nil) {
+                candidates.append(String(cString: real))
+                free(real)
+            }
+            let prefixes = candidates.map { $0.precomposedStringWithCanonicalMapping + "/" }
+            let me = getpid()
+            let matching = all.filter { process in
+                guard process.pid != me, let path = executablePath(of: process.pid) else { return false }
+                let canonical = path.precomposedStringWithCanonicalMapping
+                return prefixes.contains { canonical.hasPrefix($0) }
+            }
+            return .ok(matching)
+        }
     }
 
     /// Processes started from our Wine engine. Wine rewrites the process title of its children, so the
     /// environment is not visible; the executable path is what reliably tells them apart from other Wine installs.
     public static func processes(inEngine bundle: URL) async -> [RunningProcess] {
-        // proc_pidpath reports the canonical path, so match the symlink-resolved bundle path too. `realpath` is
-        // needed as well: `resolvingSymlinksInPath` drops the /private prefix the kernel reports for /var and /tmp.
-        var candidates = [bundle.path, bundle.resolvingSymlinksInPath().path]
-        if let real = realpath(bundle.path, nil) {
-            candidates.append(String(cString: real))
-            free(real)
-        }
-        let prefixes = candidates.map { $0.precomposedStringWithCanonicalMapping + "/" }
-        let me = getpid()
-        return await list().filter { process in
-            guard process.pid != me, let path = executablePath(of: process.pid) else { return false }
-            let canonical = path.precomposedStringWithCanonicalMapping
-            return prefixes.contains { canonical.hasPrefix($0) }
+        guard case .ok(let matching) = await processesChecked(inEngine: bundle) else { return [] }
+        return matching
+    }
+
+    public static func checkGameRunning(
+        inEngine bundle: URL,
+        executableName: String = GameProfile.cossacks3.executableName
+    ) async -> GameRunningCheck {
+        let needle = executableName.lowercased()
+        switch await processesChecked(inEngine: bundle) {
+        case .failed(let reason):
+            return .unknown(reason)
+        case .ok(let list):
+            return list.contains { $0.imageName == needle } ? .running : .notRunning
         }
     }
 
-    public static func isGameRunning(inEngine bundle: URL) async -> Bool {
-        await processes(inEngine: bundle).contains { $0.imageName == "cossacks.exe" }
+    public static func isGameRunning(
+        inEngine bundle: URL,
+        executableName: String = GameProfile.cossacks3.executableName
+    ) async -> Bool {
+        await checkGameRunning(inEngine: bundle, executableName: executableName) == .running
     }
 }

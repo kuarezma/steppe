@@ -91,7 +91,7 @@ public enum GameBootstrap {
     }
 
     /// Video and sound settings tuned for smooth play on Apple silicon (shadows, SSAO and depth of field off).
-    static func profileConfig(resolution: Resolution) -> String {
+    static func profileConfig(resolution: Resolution, multithreaded: Bool = true) -> String {
         """
         section.begin
            Engine : struct.begin
@@ -125,7 +125,7 @@ public enum GameBootstrap {
                  svgInterface = 1
                  Master = 1
               struct.end
-              UseMultithreadedMode = True
+              UseMultithreadedMode = \(multithreaded ? "True" : "False")
            struct.end
         section.end
 
@@ -182,7 +182,8 @@ public enum GameBootstrap {
         documentsGameDir: URL,
         profileName: String,
         locale: String,
-        resolution: Resolution
+        resolution: Resolution,
+        multithreaded: Bool = true
     ) throws -> [String] {
         let fm = FileManager.default
         var created: [String] = []
@@ -199,14 +200,14 @@ public enum GameBootstrap {
         let profiles = documentsGameDir.appendingPathComponent("profiles", isDirectory: true)
         let defaultProfile = profiles.appendingPathComponent("Cossack", isDirectory: true)
         try write(profileData(name: "Cossack", locale: locale), to: defaultProfile.appendingPathComponent("profile.dat"), label: "profiles/Cossack/profile.dat")
-        try write(profileConfig(resolution: resolution), to: defaultProfile.appendingPathComponent("profile.cfg"), label: "profiles/Cossack/profile.cfg")
+        try write(profileConfig(resolution: resolution, multithreaded: multithreaded), to: defaultProfile.appendingPathComponent("profile.cfg"), label: "profiles/Cossack/profile.cfg")
 
         let existing = (try? fm.contentsOfDirectory(atPath: profiles.path)) ?? []
         let hasNamedProfile = existing.contains { $0.caseInsensitiveCompare("Cossack") != .orderedSame && !$0.hasPrefix(".") }
         if !hasNamedProfile {
             let named = profiles.appendingPathComponent(profileName, isDirectory: true)
             try write(profileData(name: profileName, locale: locale), to: named.appendingPathComponent("profile.dat"), label: "profiles/\(profileName)/profile.dat")
-            try write(profileConfig(resolution: resolution), to: named.appendingPathComponent("profile.cfg"), label: "profiles/\(profileName)/profile.cfg")
+            try write(profileConfig(resolution: resolution, multithreaded: multithreaded), to: named.appendingPathComponent("profile.cfg"), label: "profiles/\(profileName)/profile.cfg")
         }
         return created
     }

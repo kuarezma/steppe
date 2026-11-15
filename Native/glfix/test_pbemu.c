@@ -101,6 +101,36 @@ int main(int argc, char **argv) {
   CHECK(CGLSetPBuffer(a, NULL, 0, 0, 0) == kCGLNoError, "detach released pbuffer");
 #pragma clang diagnostic pop
   CHECK(CGLDescribePBuffer(pb2, &w, &h, &t, &f, &mm) == kCGLBadValue, "detached released pbuffer is reclaimed");
+
+  CGLContextObj c = NULL;
+  CGLCreateContext(pix, NULL, &c);
+  CGLPBufferObj pb3 = NULL;
+  CHECK(CGLCreatePBuffer(32, 32, GL_TEXTURE_2D, GL_RGBA, 0, &pb3) == kCGLNoError && pb3, "create pbuffer for destroy test");
+  CHECK(CGLSetPBuffer(c, pb3, 0, 0, 0) == kCGLNoError, "associate pbuffer for destroy test");
+  CGLReleasePBuffer(pb3);
+  CHECK(CGLDestroyContext(c) == kCGLNoError, "destroy context succeeds");
+  CHECK(CGLDescribePBuffer(pb3, &w, &h, &t, &f, &mm) == kCGLBadValue, "destroyed context reclaims released pbuffer");
+
+  CGLContextObj d = NULL;
+  CGLCreateContext(pix, NULL, &d);
+  CGLPBufferObj pb4 = NULL;
+  CHECK(CGLCreatePBuffer(32, 32, GL_TEXTURE_2D, GL_RGBA, 0, &pb4) == kCGLNoError && pb4, "create pbuffer for release test");
+  CHECK(CGLSetPBuffer(d, pb4, 0, 0, 0) == kCGLNoError, "associate pbuffer for release test");
+  CGLReleasePBuffer(pb4);
+  CGLRetainContext(d);
+  CGLReleaseContext(d);
+  CHECK(CGLDescribePBuffer(pb4, &w, &h, &t, &f, &mm) == kCGLNoError, "intermediate CGLReleaseContext keeps pbuffer");
+  CGLReleaseContext(d);
+  CHECK(CGLDescribePBuffer(pb4, &w, &h, &t, &f, &mm) == kCGLBadValue, "final CGLReleaseContext reclaims released pbuffer");
+
+  void *(*pb_wrap)(const char *) = (void *(*)(const char *))dlsym(RTLD_DEFAULT, "pbemu_dlsym_wrap");
+  CHECK(pb_wrap && pb_wrap("glLinkProgram") == NULL && pb_wrap("glLinkProgramARB") == NULL,
+        "pbemu_dlsym_wrap delegates glLinkProgram* to glfix");
+  void *lp1 = dlsym(RTLD_DEFAULT, "glLinkProgram");
+  void *lp2 = dlsym(RTLD_DEFAULT, "glLinkProgramARB");
+  void *clr = dlsym(RTLD_DEFAULT, "glClear");
+  CHECK(lp1 != NULL && lp2 != NULL && clr != NULL, "dlsym resolves glLinkProgram, glLinkProgramARB, glClear");
+
   printf("%s (%d failures)\n", fails ? "PBEMU TEST FAILED" : "PBEMU TEST PASSED", fails);
   return fails ? 1 : 0;
 }

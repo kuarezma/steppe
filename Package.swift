@@ -36,5 +36,5 @@ let package = Package(
             path: "Tests/SteppeCoreTests"
         ),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v6]
 )

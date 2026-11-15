@@ -47,7 +47,8 @@ public enum PrefixBuilder {
     public static func create(runner: WineRunner, environment: [String: String]) async throws {
         let paths = runner.paths
         let fm = FileManager.default
-        try clearForCreation(paths: paths)
+        if hasUserData(paths: paths) { throw PrefixError.refusingToDeleteGameData }
+        try? fm.removeItem(at: paths.prefixDir)
         try fm.createDirectory(at: paths.prefixDir, withIntermediateDirectories: true)
 
         var env = environment
@@ -56,26 +57,7 @@ public enum PrefixBuilder {
         await runner.waitForIdle(environment: env, timeout: 120)
 
         try isolate(prefix: paths.prefixDir)
-
-        // Without a debugger entry Wine can hang in winedbg when a helper service crashes.
-        for key in [
-            #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
-            #"HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
-        ] {
-            try await runner.runChecked(["reg", "add", key, "/v", "Auto", "/t", "REG_SZ", "/d", "0", "/f"], environment: env, timeout: 60)
-            try await runner.runChecked(["reg", "add", key, "/v", "Debugger", "/t", "REG_SZ", "/d", "", "/f"], environment: env, timeout: 60)
-        }
-
-        // Ensure CoreAudio is explicitly active for both output and MacBook microphone input (mmdevapi / DirectSoundCapture).
-        let drivers = #"HKCU\Software\Wine\Drivers"#
-        try await runner.runChecked(["reg", "add", drivers, "/v", "Audio", "/t", "REG_SZ", "/d", "coreaudio", "/f"], environment: env, timeout: 60)
-
-        // Audio buffering that keeps the game's sound free of crackle on macOS (values measured on Apple silicon).
-        let directSound = #"HKCU\Software\Wine\DirectSound"#
-        for (name, value) in [("HelMargin", "10"), ("MaxHardwareChannels", "16"), ("SndQueueMax", "20"),
-                              ("DefaultBitsPerSample", "16"), ("DefaultSampleRate", "44100")] {
-            try await runner.runChecked(["reg", "add", directSound, "/v", name, "/t", "REG_DWORD", "/d", value, "/f"], environment: env, timeout: 60)
-        }
+        try await applyRegistrySettings(runner: runner, environment: env)
         await runner.waitForIdle(environment: env, timeout: 120)
         try isolate(prefix: paths.prefixDir)
 
@@ -85,6 +67,28 @@ public enum PrefixBuilder {
         }
         let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)
         try marker.write(paths.prefixMarker)
+    }
+
+    private static func applyRegistrySettings(runner: WineRunner, environment: [String: String]) async throws {
+        // Without a debugger entry Wine can hang in winedbg when a helper service crashes.
+        for key in [
+            #"HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
+            #"HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug"#,
+        ] {
+            try await runner.runChecked(["reg", "add", key, "/v", "Auto", "/t", "REG_SZ", "/d", "0", "/f"], environment: environment, timeout: 60)
+            try await runner.runChecked(["reg", "add", key, "/v", "Debugger", "/t", "REG_SZ", "/d", "", "/f"], environment: environment, timeout: 60)
+        }
+
+        // Ensure CoreAudio is explicitly active for both output and MacBook microphone input (mmdevapi / DirectSoundCapture).
+        let drivers = #"HKCU\Software\Wine\Drivers"#
+        try await runner.runChecked(["reg", "add", drivers, "/v", "Audio", "/t", "REG_SZ", "/d", "coreaudio", "/f"], environment: environment, timeout: 60)
+
+        // Audio buffering that keeps the game's sound free of crackle on macOS (values measured on Apple silicon).
+        let directSound = #"HKCU\Software\Wine\DirectSound"#
+        for (name, value) in [("HelMargin", "10"), ("MaxHardwareChannels", "16"), ("SndQueueMax", "20"),
+                              ("DefaultBitsPerSample", "16"), ("DefaultSampleRate", "44100")] {
+            try await runner.runChecked(["reg", "add", directSound, "/v", name, "/t", "REG_DWORD", "/d", value, "/f"], environment: environment, timeout: 60)
+        }
     }
 
     /// The prefix exists and looks like a complete Wine prefix. (Whether it needs a Wine update is `needsUpdate`.)
@@ -101,46 +105,27 @@ public enum PrefixBuilder {
         return marker.checksum != RuntimeManifest.current.engine.sha256 || marker.patchRevision != RuntimeManifest.current.patchRevision
     }
 
-    /// Makes room for a new prefix without losing anything the player made. An incomplete prefix is deleted;
-    /// one that holds game profiles or saves is moved aside (returned), next to where the new one is created.
-    @discardableResult
-    static func clearForCreation(paths: SteppePaths) throws -> URL? {
+    /// Anything the user would lose by deleting the prefix: an installed Steam library, game, or saves/profiles.
+    static func hasUserData(paths: SteppePaths) -> Bool {
         let fm = FileManager.default
-        if hasUserData(paths: paths) { throw PrefixError.refusingToDeleteGameData }
-        guard fm.fileExists(atPath: paths.prefixDir.path) else { return nil }
-        guard hasGameDocuments(paths: paths) else {
-            try fm.removeItem(at: paths.prefixDir)
-            return nil
-        }
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let aside = paths.prefixDir.deletingLastPathComponent()
-            .appendingPathComponent("\(paths.prefixDir.lastPathComponent).damaged-\(stamp)-\(UUID().uuidString.prefix(8))", isDirectory: true)
-        try fm.moveItem(at: paths.prefixDir, to: aside)
-        Log.shared.warn("The damaged Windows environment contained game documents; kept as \(aside.lastPathComponent)")
-        return aside
-    }
-
-    /// The game's own documents folder (profiles, saves) of any Windows user in the prefix has content.
-    static func hasGameDocuments(paths: SteppePaths) -> Bool {
-        let fm = FileManager.default
-        let users = paths.driveC.appendingPathComponent("users", isDirectory: true)
-        for user in (try? fm.contentsOfDirectory(atPath: users.path)) ?? [] {
-            let documents = users.appendingPathComponent(user).appendingPathComponent("Documents/cossacks")
-            if let entries = try? fm.contentsOfDirectory(atPath: documents.path), !entries.isEmpty { return true }
+        let apps = paths.steamApps
+        let commonEntries = (try? fm.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
+        if !commonEntries.isEmpty { return true }
+        if fm.fileExists(atPath: paths.appManifestURL(appID: paths.profile.steamAppID).path) { return true }
+        if let docs = paths.gameDocumentsDir,
+           let docEntries = try? fm.contentsOfDirectory(atPath: docs.path),
+           !docEntries.filter({ !$0.hasPrefix(".") }).isEmpty {
+            return true
         }
         return false
     }
 
-    /// Anything the user would lose by deleting the prefix: an installed Steam library or game.
-    static func hasUserData(paths: SteppePaths) -> Bool {
-        let apps = paths.steamApps
-        let entries = (try? FileManager.default.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
-        return !entries.isEmpty || FileManager.default.fileExists(atPath: paths.appManifestURL(appID: RuntimeManifest.current.steam.appID).path)
-    }
-
-    /// Lets a newer engine adopt an existing prefix (`wineboot -u`) without touching Steam or the game.
+    /// Lets a newer engine adopt an existing prefix (`wineboot -u`) and refresh registry settings without touching Steam or the game.
     public static func update(runner: WineRunner, environment: [String: String]) async throws {
-        try await runner.run(["wineboot", "-u"], environment: environment, timeout: 600)
+        try await runner.runChecked(["wineboot", "-u"], environment: environment, timeout: 600)
+        await runner.waitForIdle(environment: environment, timeout: 120)
+        try isolate(prefix: runner.paths.prefixDir)
+        try await applyRegistrySettings(runner: runner, environment: environment)
         await runner.waitForIdle(environment: environment, timeout: 120)
         try isolate(prefix: runner.paths.prefixDir)
         let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)

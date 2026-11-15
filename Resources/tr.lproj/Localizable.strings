@@ -1,5 +1,7 @@
 /* Steppe user interface strings. The English text is the key. */
 "%@ active, %@ skipped (game version differs)" = "%@ etkin, %@ atlandı (oyun sürümü farklı)";
+"%@ closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "%@ başladıktan hemen sonra kapandı. Bu durum sürerse Ayarlar → Tanılamayı Dışa Aktar'ı kullanın.";
+"%@ closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "%@, %@ çözünürlükte beklenmedik biçimde kapandı. Başka bir çözünürlük ön ayarı veya Ayarlar → Onar'ı deneyin.";
 "%@ did not finish in time" = "%@ zamanında tamamlanamadı";
 "%@ failed (exit %d)" = "%@ başarısız oldu (çıkış kodu %d)";
 "%@ free" = "%@ boş";
@@ -12,6 +14,7 @@
 "Active" = "Etkin";
 "Advanced" = "Gelişmiş";
 "Allow Microphone" = "Mikrofona İzin Ver";
+"Allow voice chat (microphone)" = "Sesli sohbete izin ver (mikrofon)";
 "Allowed" = "İzin verildi";
 "Another copy of Steppe is already working with this installation." = "Steppe'in başka bir kopyası bu kurulumla zaten çalışıyor.";
 "Applying macOS fixes" = "macOS düzeltmeleri uygulanıyor";
@@ -30,15 +33,15 @@
 "Click Install in the Steam window" = "Steam penceresinde Yükle'ye tıklayın";
 "Click Install in the Steam window. Steam then downloads the game here. This can take a while." = "Steam penceresinde Yükle'ye tıklayın. Steam oyunu buraya indirir. Bu biraz sürebilir.";
 "Copy Diagnostics" = "Tanılamayı Kopyala";
-"Cossacks 3 closed right after starting. If this keeps happening, use Settings → Export Diagnostics." = "Cossacks 3 başladıktan hemen sonra kapandı. Bu durum sürerse Ayarlar → Tanılamayı Dışa Aktar'ı kullanın.";
-"Cossacks 3 closed unexpectedly at %@. Try another resolution preset or Settings → Repair." = "Cossacks 3, %@ çözünürlükte beklenmedik biçimde kapandı. Başka bir çözünürlük ön ayarı veya Ayarlar → Onar'ı deneyin.";
 "Cossacks 3 did not start. Check the Steam window for a prompt and try again." = "Cossacks 3 başlamadı. Steam penceresinde bir istek olup olmadığına bakın ve tekrar deneyin.";
 "Cossacks 3 is running. Steppe tidies up when you quit the game." = "Cossacks 3 çalışıyor. Oyundan çıkınca Steppe ortalığı toplar.";
 "Cossacks 3 is still running" = "Cossacks 3 hâlâ çalışıyor";
+"Could not access the installation folder (%@)." = "Kurulum klasörüne erişilemedi (%@).";
 "Could not start %@" = "%@ başlatılamadı";
 "Creating the Windows environment" = "Windows ortamı oluşturuluyor";
 "Denied" = "Reddedildi";
 "Diagnostics saved. Personal data is removed from the file." = "Tanılama kaydedildi. Kişisel veriler dosyadan çıkarıldı.";
+"Disconnected" = "Bağlı değil";
 "Download and install updates automatically" = "Güncellemeleri otomatik indir ve yükle";
 "Download Cossacks 3" = "Cossacks 3'ü indir";
 "Download the game engine" = "Oyun motorunu indir";
@@ -47,6 +50,7 @@
 "Downloading the Wine engine" = "Wine motoru indiriliyor";
 "Downloads a Wine-based engine (about 250 MB) from its official source and checks it" = "Wine tabanlı bir motoru (yaklaşık 250 MB) resmî kaynağından indirir ve doğrular";
 "Downloads continue where they stopped the next time you open Steppe." = "İndirmeler, Steppe'i bir sonraki açışınızda kaldığı yerden devam eder.";
+"Enable speed patches" = "Hız yamalarını etkinleştir";
 "Export Diagnostics" = "Tanılamayı Dışa Aktar";
 "Faster geometry code (experimental)" = "Daha hızlı geometri kodu (deneysel)";
 "Force Quit Game" = "Oyunu Zorla Kapat";
@@ -66,12 +70,16 @@
 "Launching Cossacks 3" = "Cossacks 3 başlatılıyor";
 "Lowest resolution. Smoothest on any Mac." = "En düşük çözünürlük. Her Mac'te en akıcı seçenek.";
 "Maintenance" = "Bakım";
+"Maintenance is still running" = "Bakım işlemi hâlâ sürüyor";
 "Microphone access" = "Mikrofon erişimi";
+"Move HUD clear of the camera housing" = "Arayüzü kamera çentiğinin dışına al";
+"Multithreaded game engine" = "Çok iş parçacıklı oyun motoru";
 "Native" = "Yerel";
 "Never" = "Hiçbir zaman";
 "Not available yet" = "Henüz yok";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Yeterli boş disk alanı yok: %@ gerekli, %@ mevcut. Yer açın veya başka bir disk seçin.";
 "Not requested yet" = "Henüz istenmedi";
+"Off by default. Turn this on only if you use in-game voice chat." = "Varsayılan olarak kapalıdır. Yalnızca oyun içi sesli sohbet kullanıyorsanız açın.";
 "One click sets everything up for your Mac and screen. You sign in to your own Steam account; nothing else to configure." = "Tek tıkla her şey Mac'inize ve ekranınıza göre kurulur. Kendi Steam hesabınızla giriş yaparsınız; ayarlanacak başka bir şey yok.";
 "Open Microphone Settings" = "Mikrofon Ayarlarını Aç";
 "Open Steppe Folder" = "Steppe Klasörünü Aç";
@@ -102,7 +110,7 @@
 "Restart Now" = "Şimdi Yeniden Başlat";
 "Restart Steppe to apply the language." = "Dili uygulamak için Steppe'i yeniden başlatın.";
 "Restarting Steam" = "Steam yeniden başlatılıyor";
-"Restore Original Audio Files" = "Özgün Ses Dosyalarını Geri Yükle";
+"Restore Original Game Files" = "Özgün Oyun Dosyalarını Geri Yükle";
 "Restored %@ original files. They are replaced again on the next launch." = "%@ özgün dosya geri yüklendi. Bir sonraki başlatmada yeniden değiştirilirler.";
 "Right now" = "Şu an";
 "Rosetta 2 is needed" = "Rosetta 2 gerekli";
@@ -138,7 +146,10 @@
 "Steppe runs the Windows version of the game through Rosetta, Apple's translation layer. macOS will ask for your password to install it." = "Steppe, oyunun Windows sürümünü Apple'ın çeviri katmanı olan Rosetta üzerinden çalıştırır. Kurmak için macOS parolanızı soracak.";
 "The downloaded file failed its integrity check." = "İndirilen dosya bütünlük denetimini geçemedi.";
 "The downloaded files were not laid out as expected. Try again." = "İndirilen dosyalar beklenen düzende değil. Tekrar deneyin.";
+"The downloaded Steam installer was not a valid Windows executable." = "İndirilen Steam kurucusu geçerli bir Windows çalıştırılabilir dosyası değil.";
+"The external drive \"%@\" is not connected. Reconnect it or choose another location." = "\"%@\" harici diski bağlı değil. Yeniden bağlayın veya başka bir konum seçin.";
 "The server answered with HTTP %d." = "Sunucu HTTP %d yanıtı verdi.";
+"The server sent an unexpected response." = "Sunucu beklenmeyen bir yanıt gönderdi.";
 "The Steam installer finished but Steam was not installed." = "Steam kurucusu bitti ama Steam kurulmadı.";
 "The Windows environment could not be created. Please try again." = "Windows ortamı oluşturulamadı. Lütfen tekrar deneyin.";
 "The Windows environment is damaged but contains your game. Steppe will not delete it. Use Settings → Uninstall Everything to start over, or ask for help on the project page." = "Windows ortamı hasarlı ama oyununuzu içeriyor. Steppe onu silmeyecek. Baştan başlamak için Ayarlar → Her Şeyi Kaldır'ı kullanın veya proje sayfasından yardım isteyin.";
@@ -147,14 +158,16 @@
 "This deletes Steppe's engine, the Windows environment, Steam and the downloaded game from this Mac. Your Steam account and Steam Cloud saves are not affected." = "Bu işlem Steppe'in motorunu, Windows ortamını, Steam'i ve indirilen oyunu bu Mac'ten siler. Steam hesabınız ve Steam Cloud kayıtlarınız etkilenmez.";
 "This Mac can't run Steppe" = "Bu Mac Steppe'i çalıştıramıyor";
 "Try Again" = "Tekrar Dene";
+"Unavailable" = "Kullanılamıyor";
 "Uninstall" = "Kaldır";
-"Uninstall could not delete everything: %@" = "Kaldırma her şeyi silemedi: %@";
 "Uninstall everything?" = "Her şey kaldırılsın mı?";
 "Uninstall Everything…" = "Her Şeyi Kaldır…";
 "Unpacking" = "Açılıyor";
 "Updates" = "Güncellemeler";
 "Updating the Windows environment" = "Windows ortamı güncelleniyor";
 "Version" = "Sürüm";
+"Wait a moment for Steppe to finish cleaning up, or quit anyway." = "Steppe'in temizliği tamamlaması için biraz bekleyin veya yine de çıkın.";
+"Waiting for Steam update to finish" = "Steam güncellemesinin bitmesi bekleniyor";
 "Waiting for Steam — sign in there if it asks" = "Steam bekleniyor — isterse orada giriş yapın";
 "Windows environment" = "Windows ortamı";
 "Writes per-frame timings to the logs folder, useful for benchmarks and bug reports." = "Kare sürelerini günlük klasörüne yazar; kıyaslama ve hata bildirimleri için yararlıdır.";

@@ -13,7 +13,7 @@ Vorbis API usage or PCM output format.
 
 Requires `i686-w64-mingw32-gcc`, POSIX make, curl, tar, shasum, Python 3 and a host
 C compiler for portable tests. Build flags use `-O3 -msse2 -mfpmath=sse
--march=pentium4 -mtune=generic -fno-math-errno -fomit-frame-pointer`.
+-march=pentium4 -mtune=generic -fno-math-errno -fomit-frame-pointer -mstackrealign`.
 
 ```sh
 make
@@ -41,16 +41,18 @@ See [THIRD_PARTY.md](THIRD_PARTY.md) for the BSD-3-Clause notices.
 | `VORBIS_FAST_OFFLINE_DIR=<directory>` | Build-time local archive source. |
 | `HOST_CC=<compiler>` | Host compiler used by the portable unit tests (default `clang`). |
 
-Before any code patch, the main module must match the known-build table: Steam
-build 3154226 has a mapped `CODE` section at RVA `0x1000`, length `0x4f0da8` and
-FNV-1a64 `0xf491ea677467298c`. The hash covers `min(VirtualSize, SizeOfRawData)`
-bytes at the mapped section's VirtualAddress, before any detour writes. Unknown
-builds skip all code patches, disable the cache and report `skipped: unknown game build`
+Before any code patch, the main module must match every region in a verified
+build's table (`game_build.h`): for Steam build 3154226, five mapped regions
+(`0x4a4000` len `0x5000`, `0x4d1800` len `0x100`, `0x571f00` len `0x200`,
+`0x4c32f0` len `0x40`, and `0x8ef100` len `0x40`) are checked by FNV-1a64 at
+`base + (VA - 0x400000)` with ImageBase `0x400000` and valid MZ/PE section bounds
+(see `docs/ENGINE_PATCHES.md` for full hashes). Unknown builds skip all code
+patches, disable the cache and report `skipped: unknown game build (regions …)`
 when logging is enabled. Each patch site also requires its expected byte signature;
 the volume-culling detour additionally checks both original callees.
 
 Patch logging writes only when `STEPPE_PATCH_LOG` is set to a nonempty path;
-the application sets it on every launch.
+the application sets it when speed patches are enabled.
 FPS-counter repair, cached-sound file-open bypass and hardware-acceleration warning
 bypass are always attempted independently of the math switch. File-open bypass
 only takes effect for an existing cache hit, so disabling the cache keeps normal I/O.

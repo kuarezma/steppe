@@ -13,29 +13,30 @@ jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install mingw-w64
         run: brew install mingw-w64
 
       - name: Run tests
         run: |
-          swift test
+          python3 Scripts/verify-appcast.py --selftest
           python3 Scripts/extract-strings.py --check
-          make -C Native/glfix test
-          make -C Native/vorbis-fast test
-          make -C Native/dialog-helper test
+          swift test
+          make -C Native/glfix clean test
+          make -C Native/vorbis-fast clean test
+          make -C Native/dialog-helper clean test
 
       - name: Build, package and sign the update feed
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          [ -n "$SPARKLE_PRIVATE_KEY" ] || { echo "SPARKLE_PRIVATE_KEY secret is empty" >&2; exit 1; }
+          trap 'rm -f "$RUNNER_TEMP/sparkle.key"' EXIT
           VERSION="${GITHUB_REF_NAME#v}"
-          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
-          chmod 600 "$RUNNER_TEMP/sparkle.key"
+          (umask 077 && printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key")
           swift package resolve
-          VERSION="$VERSION" BUILD="$GITHUB_RUN_NUMBER" SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle.key" Scripts/release.sh
-          rm -f "$RUNNER_TEMP/sparkle.key"
+          VERSION="$VERSION" SPARKLE_PRIVATE_KEY_FILE="$RUNNER_TEMP/sparkle.key" Scripts/release.sh
 
       - name: Publish
         env:
@@ -44,7 +45,15 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           NOTES="docs/release-notes/$VERSION.md"
           [ -f "$NOTES" ] || { echo "Release notes for $VERSION" > "$RUNNER_TEMP/notes.md"; NOTES="$RUNNER_TEMP/notes.md"; }
+          PRERELEASE_FLAG=()
+          [[ "$VERSION" == *-* ]] && PRERELEASE_FLAG=(--prerelease)
           gh release create "$GITHUB_REF_NAME" \
             dist/release/Steppe-"$VERSION".dmg dist/release/Steppe-"$VERSION".zip \
             dist/release/appcast.xml dist/release/SHA256SUMS.txt \
-            --title "Steppe $VERSION" --notes-file "$NOTES"
+            --title "Steppe $VERSION" --notes-file "$NOTES" --draft \
+            ${PRERELEASE_FLAG[@]+"${PRERELEASE_FLAG[@]}"}
+          assets="$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')"
+          for expected in "Steppe-${VERSION}.dmg" "Steppe-${VERSION}.zip" "appcast.xml" "SHA256SUMS.txt"; do
+            printf '%s\n' "$assets" | grep -qxF "$expected" || { echo "Missing uploaded asset: $expected" >&2; exit 1; }
+          done
+          gh release edit "$GITHUB_REF_NAME" --draft=false

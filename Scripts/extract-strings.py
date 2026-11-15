@@ -53,6 +53,13 @@ def parse_strings(path: Path) -> dict[str, str]:
     return result
 
 
+PLACEHOLDER_RE = re.compile(r'%(?:\d+\$)?([@dDuUxXoOfFeEgGcCsSp])')
+
+
+def placeholders(text: str) -> list[str]:
+    return sorted(PLACEHOLDER_RE.findall(text.replace('%%', '')))
+
+
 if __name__ == "__main__":
     used = keys()
     if "--check" not in sys.argv:
@@ -69,4 +76,10 @@ if __name__ == "__main__":
             status = 1
         for k in extra:
             print(f"[{lang}] unused:  {k!r}")
+            status = 1
+        for k, v in sorted(table.items()):
+            val = v.replace('\\"', '"').replace('\\n', '\n')
+            if placeholders(k) != placeholders(val):
+                print(f"[{lang}] placeholder mismatch for {k!r}: key={placeholders(k)} val={placeholders(val)}")
+                status = 1
     sys.exit(status)

@@ -9,12 +9,13 @@
 // that is the game's own message form (Delphi class TMessageForm, titled "Cossacks III") whose only
 // button is "OK". Dialogs with other buttons (for example Yes/No questions) are left alone.
 //
-// Usage: dismiss-dialog.exe [timeout-seconds]   (default 300)
-// Exit codes: 0 = dialog dismissed, 1 = timed out without seeing it.
+// Usage: dismiss-dialog.exe [timeout-seconds]   (default 600)
+// Exit codes: 0 = dialog dismissed or main game window open >= 10s, 1 = timed out.
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
 #endif
 #include <windows.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -78,16 +79,76 @@ static BOOL CALLBACK inspect_window(HWND window, LPARAM param) {
     return TRUE;
 }
 
+struct poll_state {
+    int dismissed;
+    int main_window_visible;
+};
+
+enum { MAIN_WINDOW_STABLE_MS = 10000 };
+
+static int is_main_game_window(HWND window) {
+    if (!IsWindowVisible(window)) return 0;
+    RECT r;
+    if (!GetWindowRect(window, &r)) return 0;
+    if ((r.right - r.left) < 640 || (r.bottom - r.top) < 480) return 0;
+    char cls[32] = {0};
+    GetClassNameA(window, cls, sizeof cls);
+    if (lstrcmpA(cls, "TMessageForm") == 0) return 0;
+    return is_game_window(window);
+}
+
+static BOOL CALLBACK inspect_poll_window(HWND window, LPARAM param) {
+    struct poll_state *state = (struct poll_state *)param;
+    if (!IsWindowVisible(window)) return TRUE;
+    int dismissed = 0;
+    if (inspect_window(window, (LPARAM)&dismissed) == FALSE && dismissed) {
+        state->dismissed = 1;
+        return FALSE;
+    }
+    if (!state->main_window_visible && is_main_game_window(window)) {
+        state->main_window_visible = 1;
+    }
+    return TRUE;
+}
+
+static int check_main_window_stable(int visible, DWORD now_ms, DWORD *since_ms, int *tracking) {
+    if (!visible) {
+        *tracking = 0;
+        *since_ms = 0;
+        return 0;
+    }
+    if (!*tracking) {
+        *tracking = 1;
+        *since_ms = now_ms;
+        return 0;
+    }
+    return (DWORD)(now_ms - *since_ms) >= (DWORD)MAIN_WINDOW_STABLE_MS;
+}
+
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show) {
     (void)inst; (void)prev; (void)show;
-    int timeout = (cmd && *cmd) ? atoi(cmd) : 300;
-    if (timeout <= 0 || timeout > 3600) timeout = 300;
-    DWORD deadline = GetTickCount() + (DWORD)timeout * 1000u;
-    while ((long)(deadline - GetTickCount()) > 0) {
-        int dismissed = 0;
-        EnumWindows(inspect_window, (LPARAM)&dismissed);
-        if (dismissed) return 0;
+    int timeout = (cmd && *cmd) ? atoi(cmd) : 600;
+    if (timeout <= 0 || timeout > 3600) timeout = 600;
+    DWORD start = GetTickCount();
+    DWORD timeout_ms = (DWORD)timeout * 1000u;
+    DWORD main_since = 0;
+    int tracking_main = 0;
+    while ((DWORD)(GetTickCount() - start) < timeout_ms) {
+        struct poll_state state = {0, 0};
+        EnumWindows(inspect_poll_window, (LPARAM)&state);
+        if (state.dismissed) {
+            puts("dismiss_dialog: dismissed startup warning");
+            fflush(stdout);
+            return 0;
+        }
+        if (check_main_window_stable(state.main_window_visible, GetTickCount(), &main_since, &tracking_main)) {
+            puts("dismiss_dialog: main game window active, exiting");
+            fflush(stdout);
+            return 0;
+        }
         Sleep(250);
     }
+    puts("dismiss_dialog: timed out");
+    fflush(stdout);
     return 1;
 }

@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) Steppe contributors
 CC = i686-w64-mingw32-gcc
-CFLAGS = -O3 -msse2 -mfpmath=sse -march=pentium4 -mtune=generic -fno-math-errno -fomit-frame-pointer
+CFLAGS = -O3 -msse2 -mfpmath=sse -march=pentium4 -mtune=generic -fno-math-errno -fomit-frame-pointer -mstackrealign
 CPPFLAGS = -isystem .cache/libogg-1.3.5/include -isystem .cache/libvorbis-1.3.7/include -I.cache/libvorbis-1.3.7/lib
 OGG = .cache/libogg-1.3.5
 VORBIS = .cache/libvorbis-1.3.7
 VORBIS_NAMES = mdct smallft block envelope window lsp lpc analysis synthesis psy info floor1 floor0 res0 mapping0 registry codebook sharedbook lookup bitrate
 VORBIS_SOURCES = $(addprefix $(VORBIS)/lib/,$(addsuffix .c,$(VORBIS_NAMES)))
-RENAMES = $(foreach n,clear open_callbacks pcm_total pcm_seek raw_seek time_seek info comment read,-Dov_$(n)=real_ov_$(n))
+RENAMES = $(foreach n,bitrate bitrate_instant clear comment info open open_callbacks pcm_seek pcm_seek_page pcm_tell pcm_total raw_seek raw_tell raw_total read seekable serialnumber streams test test_callbacks test_open time_seek time_seek_page time_tell time_total,-Dov_$(n)=real_ov_$(n))
 .PHONY: all sources test clean
 all: build/ogg.dll build/vorbis.dll build/vorbisfile.dll
 # Validate archives on every invocation, including already cached sources.

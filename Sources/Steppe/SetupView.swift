@@ -56,6 +56,7 @@ struct SetupView: View {
                     Button("Try Again") { controller.startSetup() }.buttonStyle(PrimaryButtonStyle())
                 } else {
                     Button("Cancel") { controller.cancelSetup() }.buttonStyle(SecondaryButtonStyle())
+                        .disabled(controller.isMaintaining)
                 }
             }
         }
@@ -86,27 +87,42 @@ struct SetupView: View {
         return min(1, total)
     }
 
+    private var hasStageFailure: Bool {
+        controller.stages.values.contains {
+            if case .failed = $0 { return true }
+            return false
+        }
+    }
+
     @ViewBuilder private var prompt: some View {
-        if controller.rosettaMissing {
+        switch controller.activePrompt {
+        case .installRosetta:
             promptCard(symbol: "cpu", title: "Rosetta 2 is needed",
                        text: "Steppe runs the Windows version of the game through Rosetta, Apple's translation layer. macOS will ask for your password to install it.") {
                 Button("Install Rosetta") { controller.installRosetta() }.buttonStyle(PrimaryButtonStyle())
             }
-        } else if case .waitingForUser = controller.stages[.signIn] ?? .pending {
+        case .signInSteam:
             promptCard(symbol: "person.badge.key.fill", title: "Sign in to Steam",
                        text: "A Steam window opens in a moment. Sign in with your own account. Your password goes only to Steam and never touches Steppe.") {
                 Button("Show Steam Window") { controller.openSteam() }.buttonStyle(SecondaryButtonStyle())
             }
-        } else if case .waitingForUser(let message) = controller.stages[.game] ?? .pending {
-            if message == L("Steam is not running — open it to continue") {
-                promptCard(symbol: "exclamationmark.arrow.circlepath", title: "Steam needs your attention",
-                           text: "Steam was closed. Open it again and the download continues where it stopped.") {
-                    Button("Show Steam Window") { controller.openSteam() }.buttonStyle(SecondaryButtonStyle())
-                }
-            } else {
-                promptCard(symbol: "arrow.down.app.fill", title: "Install Cossacks 3",
-                           text: "Click Install in the Steam window. Steam then downloads the game here. This can take a while.") {
-                    Button("Show Steam Window") { controller.openSteam() }.buttonStyle(SecondaryButtonStyle())
+        case .steamClosedReopen:
+            promptCard(symbol: "exclamationmark.arrow.circlepath", title: "Steam needs your attention",
+                       text: "Steam was closed. Open it again and the download continues where it stopped.") {
+                Button("Show Steam Window") { controller.openSteam() }.buttonStyle(SecondaryButtonStyle())
+            }
+        case .installGame:
+            promptCard(symbol: "arrow.down.app.fill", title: "Install Cossacks 3",
+                       text: "Click Install in the Steam window. Steam then downloads the game here. This can take a while.") {
+                Button("Show Steam Window") { controller.openSteam() }.buttonStyle(SecondaryButtonStyle())
+            }
+        case nil:
+            if let failedMessage, !hasStageFailure {
+                Card {
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 22)).foregroundStyle(Theme.danger).frame(width: 28)
+                        Text(verbatim: failedMessage).font(.system(size: 13)).foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

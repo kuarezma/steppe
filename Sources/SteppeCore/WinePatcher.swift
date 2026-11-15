@@ -151,6 +151,8 @@ public enum WinePatcher {
     private static func sign(arguments: [String]) async throws {
         do {
             try await ProcessRunner.runChecked(codesign, arguments: arguments, timeout: 60)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw WinePatchError.signingFailed(error.localizedDescription)
         }

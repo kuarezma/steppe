@@ -50,7 +50,7 @@ Steam build 3154226:
 
 Unknown builds skip all code patches and disable the PCM cache. Each patch also requires exact target signatures; the volume-culling detour checks both original callees.
 
-Patch logging writes only when `STEPPE_PATCH_LOG` is set to a nonempty path (the application sets it on every launch). An unknown build reports one line, `skipped: unknown game build (regions <va>:<fnv> …)`, within the 512-byte log buffer; unreadable regions are marked `unreadable`. Add builds only after independent verification of the logged region hashes. The PCM cache is enabled only if the cached-sound file-open bypass was installed successfully. The DLLs link `libgcc` statically; a dynamic link makes the DLL fail to load under Wine.
+Patch logging writes only when `STEPPE_PATCH_LOG` is set to a nonempty path (the application sets it when speed patches are enabled). An unknown build reports one line, `skipped: unknown game build (regions <va>:<fnv> …)`, within the 512-byte log buffer; unreadable regions are marked `unreadable`. Add builds only after independent verification of the logged region hashes. The PCM cache is enabled only if the cached-sound file-open bypass was installed successfully. The DLLs link `libgcc` statically; a dynamic link makes the DLL fail to load under Wine.
 
 Note: `vorbisfile.dll` is loaded lazily, *after* the game's startup box. Its own patch for that box therefore never takes effect; the dialog helper handles the box.
 
@@ -66,4 +66,4 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#why-the-first-run-files-exist).
 
 ## 6. Runtime environment
 
-`WINEESYNC=0` (ESYNC makes Wine's helper services spin at 100 % CPU on this engine), `WINEDLLOVERRIDES=mscoree,mshtml=;mountmgr.sys=d`, `WINEDEBUG=-all` while playing, `LANG=en_US.UTF-8`, `USER=steppe`.
+`WINEESYNC=0` (ESYNC makes Wine's helper services spin at 100 % CPU on this engine), `WINEDLLOVERRIDES=mscoree,mshtml=;mountmgr.sys=d`, `WINEDEBUG=-all,err+seh` while playing (with an explicit host environment allowlist), `LANG=en_US.UTF-8`, `USER=steppe`.

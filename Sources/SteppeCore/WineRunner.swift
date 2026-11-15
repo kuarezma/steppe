@@ -46,13 +46,19 @@ public struct WineRunner: Sendable {
     }
 
     /// Stops the prefix: polite `wineserver -k`, then SIGKILL for anything of this prefix that survives.
+    /// Detached so cancellation of the outer workflow never skips cleanup.
     public func killAll(environment: [String: String]) async {
-        _ = try? await ProcessRunner.run(paths.wineserverBinary, arguments: ["-k"], environment: environment, timeout: 20)
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        for process in await ProcessScanner.processes(inEngine: paths.wineBundle) {
-            Log.shared.warn("Force-stopping leftover process \(process.pid)")
-            kill(process.pid, SIGKILL)
-        }
+        let wineserver = paths.wineserverBinary
+        let prefix = paths.prefixDir
+        let bundle = paths.wineBundle
+        await Task.detached(priority: .userInitiated) {
+            _ = try? await ProcessRunner.run(wineserver, arguments: ["-k"], environment: environment, currentDirectory: prefix, timeout: 20)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            for process in await ProcessScanner.processes(inEngine: bundle) {
+                Log.shared.warn("Force-stopping leftover process \(process.pid)")
+                kill(process.pid, SIGKILL)
+            }
+        }.value
     }
 
     public func isAnyProcessRunning() async -> Bool {

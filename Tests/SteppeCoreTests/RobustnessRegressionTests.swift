@@ -49,13 +49,25 @@ final class RobustnessRegressionTests: XCTestCase {
         XCTAssertEqual(try load(json), expected)
     }
 
-    func testSettingsInvalidResolutionPreservesOtherValues() throws {
-        for resolution in [#"{"width":0,"height":0}"#, #"{"width":16385,"height":1080}"#, #"{"width":1920,"height":16385}"#, #"{"width":1024,"height":575}"#] {
+    func testSettingsOutOfRangeResolutionIsClampedAndPreservesOtherValues() throws {
+        let cases: [(String, Resolution)] = [
+            (#"{"width":0,"height":0}"#, Resolution(width: AppSettings.widthRange.lowerBound, height: AppSettings.heightRange.lowerBound)),
+            (#"{"width":99999,"height":1080}"#, Resolution(width: AppSettings.widthRange.upperBound, height: 1080)),
+        ]
+        for (resolution, expected) in cases {
             let settings = try load("{\"preset\":\"quality\",\"useCustomResolution\":true,\"quitSteamAfterGame\":true,\"experimentalMathPatches\":false,\"recordFrameTimes\":false,\"customResolution\":\(resolution)}")
-            XCTAssertEqual(settings.customResolution, AppSettings().customResolution)
+            XCTAssertEqual(settings.customResolution, expected)
             XCTAssertEqual(settings.preset, .quality)
             XCTAssertTrue(settings.useCustomResolution)
         }
+    }
+
+    func testSettingsWithAWronglyTypedValueKeepTheOthers() throws {
+        let settings = try load(#"{"preset":"quality","useCustomResolution":"yes","quitSteamAfterGame":false,"enableNotchHUD":false}"#)
+        XCTAssertEqual(settings.preset, .quality)
+        XCTAssertFalse(settings.useCustomResolution, "the wrongly typed value falls back to its default")
+        XCTAssertFalse(settings.quitSteamAfterGame)
+        XCTAssertFalse(settings.enableNotchHUD)
     }
 
     func testSettingsRoundTripAndInvalidFile() throws {

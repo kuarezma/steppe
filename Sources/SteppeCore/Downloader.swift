@@ -73,8 +73,8 @@ public enum Downloader {
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as DownloadError {
-                // Non-transient answers are not retried.
-                if case .badStatus(let code) = error, code != 429, code < 500 { throw error }
+                // Non-transient answers are not retried (416 is retried once the stale .part file has been removed).
+                if case .badStatus(let code) = error, code != 429, code != 416, code < 500 { throw error }
                 if attempt >= maxAttempts { throw error }
             } catch {
                 if (error as? URLError)?.code == .cancelled { throw CancellationError() }
@@ -86,6 +86,7 @@ public enum Downloader {
             try await Task.sleep(nanoseconds: UInt64(min(30, 1 << attempt)) * retryDelayUnit)
         }
 
+        try? fm.removeItem(at: part.appendingPathExtension("meta"))
         try fm.moveItem(at: part, to: destination)
     }
 
@@ -97,18 +98,26 @@ public enum Downloader {
         progress: @escaping @Sendable (DownloadProgress) -> Void
     ) async throws {
         let fm = FileManager.default
+        let metaURL = part.appendingPathExtension("meta")
         var existing = (try? fm.attributesOfItem(atPath: part.path)[.size] as? Int64) ?? 0
         if let expectedSize, existing > expectedSize {
             try? fm.removeItem(at: part)
+            try? fm.removeItem(at: metaURL)
             existing = 0
         }
         if let expectedSize, existing == expectedSize { return }
 
         var request = URLRequest(url: url)
         request.setValue("Steppe", forHTTPHeaderField: "User-Agent")
-        if existing > 0 { request.setValue("bytes=\(existing)-", forHTTPHeaderField: "Range") }
+        if existing > 0 {
+            request.setValue("bytes=\(existing)-", forHTTPHeaderField: "Range")
+            if let validator = try? String(contentsOf: metaURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+               !validator.isEmpty {
+                request.setValue(validator, forHTTPHeaderField: "If-Range")
+            }
+        }
 
-        let delegate = DownloadDelegate(part: part, resumeOffset: existing, progress: progress)
+        let delegate = DownloadDelegate(part: part, metaURL: metaURL, resumeOffset: existing, progress: progress)
         let config = configuration ?? {
             let c = URLSessionConfiguration.ephemeral
             c.timeoutIntervalForRequest = 60
@@ -132,6 +141,7 @@ public enum Downloader {
 
 private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     let part: URL
+    let metaURL: URL
     var resumeOffset: Int64
     let progress: @Sendable (DownloadProgress) -> Void
     var continuation: CheckedContinuation<Void, Error>?
@@ -142,17 +152,30 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
     private var lastReport = Date.distantPast
     private var failure: Error?
 
-    init(part: URL, resumeOffset: Int64, progress: @escaping @Sendable (DownloadProgress) -> Void) {
+    init(part: URL, metaURL: URL, resumeOffset: Int64, progress: @escaping @Sendable (DownloadProgress) -> Void) {
         self.part = part
+        self.metaURL = metaURL
         self.resumeOffset = resumeOffset
         self.received = resumeOffset
         self.progress = progress
     }
 
+    private static func validator(from response: HTTPURLResponse) -> String? {
+        if let etag = response.value(forHTTPHeaderField: "ETag")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !etag.isEmpty, !etag.hasPrefix("W/") {
+            return etag
+        }
+        if let modified = response.value(forHTTPHeaderField: "Last-Modified")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !modified.isEmpty {
+            return modified
+        }
+        return nil
+    }
+
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         guard let http = response as? HTTPURLResponse else {
-            failure = DownloadError.network("Unexpected response")
+            failure = DownloadError.network(L("The server sent an unexpected response."))
             return completionHandler(.cancel)
         }
         let fm = FileManager.default
@@ -160,19 +183,24 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
         case 206:
             total = resumeOffset + http.expectedContentLength
         case 200:
-            // Server ignored the range request: start over.
+            // Server ignored the range request or If-Range detected a newer remote file: start over.
             resumeOffset = 0
             received = 0
             total = http.expectedContentLength
             try? fm.removeItem(at: part)
+            try? fm.removeItem(at: metaURL)
         case 416:
-            // Our partial file is unusable; discard and let the caller retry.
+            // Our partial file is unusable; discard and let the caller retry from scratch.
             try? fm.removeItem(at: part)
-            failure = DownloadError.badStatus(503)
+            try? fm.removeItem(at: metaURL)
+            failure = DownloadError.badStatus(416)
             return completionHandler(.cancel)
         default:
             failure = DownloadError.badStatus(http.statusCode)
             return completionHandler(.cancel)
+        }
+        if let validator = Self.validator(from: http) {
+            try? validator.write(to: metaURL, atomically: true, encoding: .utf8)
         }
         if !fm.fileExists(atPath: part.path) { fm.createFile(atPath: part.path, contents: nil) }
         do {

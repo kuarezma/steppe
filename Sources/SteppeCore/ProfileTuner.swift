@@ -2,11 +2,16 @@ import Foundation
 
 /// Edits the game's `profile.cfg` (a nested `struct.begin` / `struct.end` text format).
 ///
-/// Only the `ScreenResolution` block is touched; every other byte is preserved.
+/// Only the `ScreenResolution` block (and optionally `UseMultithreadedMode`) is touched; every other byte is preserved.
 public enum ProfileConfig {
     public static func screenResolution(in text: String) -> Resolution? {
         guard let span = resolutionSpan(in: text) else { return nil }
         return span.current
+    }
+
+    public static func multithreaded(in text: String) -> Bool? {
+        guard let (_, value) = multithreadedValueRange(in: text) else { return nil }
+        return value
     }
 
     /// Returns the updated text, or `nil` if the file has no `ScreenResolution` block.
@@ -20,6 +25,23 @@ public enum ProfileConfig {
             result.replaceSubrange(range, with: value)
         }
         return result
+    }
+
+    /// Returns the updated text with `UseMultithreadedMode` set, or `nil` if the setting is not present.
+    public static func settingMultithreaded(_ enabled: Bool, in text: String) -> String? {
+        guard let (range, current) = multithreadedValueRange(in: text) else { return nil }
+        if current == enabled { return text }
+        var result = text
+        result.replaceSubrange(range, with: enabled ? "True" : "False")
+        return result
+    }
+
+    private static func multithreadedValueRange(in text: String) -> (Range<String.Index>, Bool)? {
+        guard let engineStart = text.range(of: #"Engine\s*:\s*struct\.begin"#, options: .regularExpression) else { return nil }
+        guard let match = text.range(of: #"\bUseMultithreadedMode\s*=\s*(True|False)\b"#, options: [.regularExpression, .caseInsensitive], range: engineStart.upperBound..<text.endIndex) else { return nil }
+        let line = text[match]
+        guard let valRange = line.range(of: #"(True|False)$"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        return (valRange, line[valRange].lowercased() == "true")
     }
 
     private struct Span {
@@ -51,10 +73,10 @@ public enum ProfileTuner {
         public var skipped: [String] = []
     }
 
-    /// Writes `resolution` into every existing `profiles/*/profile.cfg`.
+    /// Writes `resolution` (and optionally `UseMultithreadedMode`) into every existing `profiles/*/profile.cfg`.
     /// The first time a file is touched a copy is kept next to it as `profile.cfg.steppe-orig`.
     @discardableResult
-    public static func apply(resolution: Resolution, profilesDir: URL) throws -> Outcome {
+    public static func apply(resolution: Resolution, multithreaded: Bool? = nil, profilesDir: URL) throws -> Outcome {
         var outcome = Outcome()
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: profilesDir.path) else { return outcome }
@@ -65,14 +87,17 @@ public enum ProfileTuner {
                 outcome.skipped.append(name)
                 continue
             }
-            // Latin-1 preserves every original byte; only ASCII resolution digits change.
+            // Latin-1 preserves every original byte; only ASCII resolution/flag bytes change.
             guard let text = String(data: data, encoding: .isoLatin1) else {
                 outcome.skipped.append(name)
                 continue
             }
-            guard let updated = ProfileConfig.settingScreenResolution(resolution, in: text) else {
+            guard var updated = ProfileConfig.settingScreenResolution(resolution, in: text) else {
                 outcome.skipped.append(name)
                 continue
+            }
+            if let multithreaded, let withMT = ProfileConfig.settingMultithreaded(multithreaded, in: updated) {
+                updated = withMT
             }
             if updated == text {
                 outcome.unchanged.append(name)

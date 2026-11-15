@@ -32,3 +32,11 @@ sparkle_ed25519_private*
 # Logs and local test data
 *.log
 logs/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local coordination artifacts
+docs/coordination/
+Docs/coordination/

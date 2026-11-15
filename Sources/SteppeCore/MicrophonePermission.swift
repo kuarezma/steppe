@@ -42,6 +42,7 @@ public enum MicrophonePermission {
 
     /// Ensures the host app's TCC microphone record is valid for the current binary and requests access if needed
     /// before Steam or the game starts.
+    @MainActor
     @discardableResult
     public static func ensureAccessForSteam(defaults: UserDefaults = .standard) async -> MicrophoneStatus {
         guard isRunningAsAppBundle else { return status() }
@@ -70,6 +71,7 @@ public enum MicrophonePermission {
     }
 
     /// Resets the TCC microphone entry for Steppe and asks macOS to prompt the user again.
+    @MainActor
     @discardableResult
     public static func resetAndRequestAccess(defaults: UserDefaults = .standard) async -> MicrophoneStatus {
         await resetTCC()
@@ -91,6 +93,7 @@ public enum MicrophonePermission {
         return try? Hashing.sha256(of: execURL)
     }
 
+    @MainActor
     private static func resetIfBinaryChanged(defaults: UserDefaults) async {
         guard let currentHash = currentExecutableSHA256() else { return }
         let storedHash = defaults.string(forKey: binaryHashDefaultsKey)

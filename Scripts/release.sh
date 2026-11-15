@@ -41,13 +41,22 @@ cp "dist/Steppe-$VERSION.zip" "$OUT/updates/"
 echo "==> Appcast"
 KEY_ARGS=()
 [ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ] && KEY_ARGS=(--ed-key-file "$SPARKLE_PRIVATE_KEY_FILE")
-"$SPARKLE_BIN/generate_appcast" ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
+"$SPARKLE_BIN/generate_appcast" --embed-release-notes ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
     --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
     "$OUT/updates"
 mv "$OUT/updates/appcast.xml" "$OUT/appcast.xml"
 # Only the signed zip is published for Sparkle; keep the folder out of the release assets.
 cp "$OUT/updates/Steppe-$VERSION.zip" "$OUT/"
 rm -rf "$OUT/updates"
+BUILT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' dist/Steppe.app/Contents/Info.plist)"
+VERIFY_ARGS=()
+[ -f "docs/release-notes/$VERSION.md" ] && VERIFY_ARGS+=(--require-notes)
+python3 Scripts/verify-appcast.py "$OUT/appcast.xml" \
+    --zip "$OUT/Steppe-$VERSION.zip" \
+    --version "$VERSION" \
+    --build "$BUILT_VERSION" \
+    --url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
+    ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"}
 (cd "$OUT" && shasum -a 256 Steppe-"$VERSION".dmg Steppe-"$VERSION".zip > SHA256SUMS.txt)
 
 echo

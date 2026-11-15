@@ -3,9 +3,11 @@ import Foundation
 /// All on-disk locations Steppe uses, derived from a single root directory.
 public struct SteppePaths: Sendable {
     public let root: URL
+    public let profile: GameProfile
 
-    public init(root: URL) {
+    public init(root: URL, profile: GameProfile = .cossacks3) {
         self.root = root
+        self.profile = profile
     }
 
     /// `~/Library/Application Support/Steppe`
@@ -22,9 +24,10 @@ public struct SteppePaths: Sendable {
     public var frameworksDir: URL { root.appendingPathComponent("frameworks", isDirectory: true) }
     public var downloadsDir: URL { root.appendingPathComponent("downloads", isDirectory: true) }
     public var logsDir: URL { root.appendingPathComponent("logs", isDirectory: true) }
-    public var prefixDir: URL { root.appendingPathComponent("prefixes/cossacks3", isDirectory: true) }
+    public var prefixDir: URL { root.appendingPathComponent("prefixes/\(profile.prefixDirectoryName)", isDirectory: true) }
     public var stateFile: URL { root.appendingPathComponent("state.json") }
     public var settingsFile: URL { root.appendingPathComponent("settings.json") }
+    public var rootMarker: URL { root.appendingPathComponent(".steppe-root.json") }
     public var engineMarker: URL { engineDir.appendingPathComponent(".steppe-engine.json") }
     public var frameworksMarker: URL { frameworksDir.appendingPathComponent(".steppe-frameworks.json") }
     public var prefixMarker: URL { prefixDir.appendingPathComponent(".steppe-prefix.json") }
@@ -56,9 +59,14 @@ public struct SteppePaths: Sendable {
         return preferred.map { users.appendingPathComponent($0, isDirectory: true) }
     }
 
+    /// Where the game stores documents and saves inside the Windows profile.
+    public var gameDocumentsDir: URL? {
+        windowsUserDir?.appendingPathComponent(profile.documentsSubpath, isDirectory: true)
+    }
+
     /// Where the game stores profiles (`profile.cfg` lives inside each profile).
     public var gameProfilesDir: URL? {
-        windowsUserDir?.appendingPathComponent("Documents/cossacks/profiles", isDirectory: true)
+        gameDocumentsDir?.appendingPathComponent("profiles", isDirectory: true)
     }
 
     public func appManifestURL(appID: Int) -> URL {
@@ -68,6 +76,9 @@ public struct SteppePaths: Sendable {
     public func ensureDirectories() throws {
         for dir in [root, downloadsDir, logsDir] {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        if !FileManager.default.fileExists(atPath: rootMarker.path) {
+            try Data("{\"steppe\":1}\n".utf8).write(to: rootMarker, options: .atomic)
         }
     }
 }

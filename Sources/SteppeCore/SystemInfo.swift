@@ -34,28 +34,45 @@ public struct SystemInfo: Sendable {
         guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
         var buffer = [CChar](repeating: 0, count: size)
         guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
-        return String(cString: buffer)
+        return String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
     }
 
-    /// Free space usable for new files at `url` (nearest existing ancestor).
+    public enum DiskStatus: Equatable, Sendable {
+        case available(Int64)
+        case externalVolumeUnmounted(String)
+        case unavailable
+    }
+
+    /// Free space usable for new files at `url` (nearest existing ancestor), distinguishing unmounted `/Volumes/<name>`.
     /// `statfs` is used because the "important usage" resource value is 0 for volumes other than the startup disk.
-    public static func freeBytes(at url: URL) -> Int64 {
+    public static func diskStatus(at url: URL) -> DiskStatus {
         let components = url.standardizedFileURL.pathComponents
         if components.count > 2, components[1] == "Volumes" {
             // An unmounted external drive (or a leftover stub directory under /Volumes) must not fall back to the startup disk.
-            let mountPoint = "/Volumes/" + components[2]
+            let volumeName = components[2]
+            let mountPoint = "/Volumes/" + volumeName
             var mountStats = statfs(), volumesStats = statfs()
-            guard statfs(mountPoint, &mountStats) == 0, statfs("/Volumes", &volumesStats) == 0 else { return 0 }
+            guard statfs(mountPoint, &mountStats) == 0, statfs("/Volumes", &volumesStats) == 0 else {
+                return .externalVolumeUnmounted(volumeName)
+            }
             let isRootSymlink = (try? FileManager.default.destinationOfSymbolicLink(atPath: mountPoint)) == "/"
-            if !isRootSymlink && mountStats.f_fsid.val == volumesStats.f_fsid.val { return 0 }
+            if !isRootSymlink && mountStats.f_fsid.val == volumesStats.f_fsid.val {
+                return .externalVolumeUnmounted(volumeName)
+            }
         }
         var probe = url
         while !FileManager.default.fileExists(atPath: probe.path), probe.pathComponents.count > 1 {
             probe.deleteLastPathComponent()
         }
         var stats = statfs()
-        guard statfs(probe.path, &stats) == 0 else { return 0 }
-        return Int64(stats.f_bavail) * Int64(stats.f_bsize)
+        guard statfs(probe.path, &stats) == 0 else { return .unavailable }
+        return .available(Int64(stats.f_bavail) * Int64(stats.f_bsize))
+    }
+
+    /// Free space usable for new files at `url` (nearest existing ancestor).
+    public static func freeBytes(at url: URL) -> Int64 {
+        if case .available(let bytes) = diskStatus(at: url) { return bytes }
+        return 0
     }
 
     /// Whether x86_64 code can run (Rosetta 2 installed).

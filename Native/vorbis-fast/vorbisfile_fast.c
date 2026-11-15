@@ -11,15 +11,31 @@
 #include "vorbis/vorbisfile.h"
 #include "game_build.h"
 
+extern long real_ov_bitrate(OggVorbis_File *vf, int i);
+extern long real_ov_bitrate_instant(OggVorbis_File *vf);
 extern int real_ov_clear(OggVorbis_File *vf);
-extern int real_ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial, long ibytes, ov_callbacks callbacks);
-extern ogg_int64_t real_ov_pcm_total(OggVorbis_File *vf, int i);
-extern int real_ov_pcm_seek(OggVorbis_File *vf, ogg_int64_t pos);
-extern int real_ov_raw_seek(OggVorbis_File *vf, ogg_int64_t pos);
-extern int real_ov_time_seek(OggVorbis_File *vf, double pos);
-extern vorbis_info *real_ov_info(OggVorbis_File *vf, int link);
 extern vorbis_comment *real_ov_comment(OggVorbis_File *vf, int link);
+extern vorbis_info *real_ov_info(OggVorbis_File *vf, int link);
+extern int real_ov_open(FILE *f, OggVorbis_File *vf, const char *initial, long ibytes);
+extern int real_ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial, long ibytes, ov_callbacks callbacks);
+extern int real_ov_pcm_seek(OggVorbis_File *vf, ogg_int64_t pos);
+extern int real_ov_pcm_seek_page(OggVorbis_File *vf, ogg_int64_t pos);
+extern ogg_int64_t real_ov_pcm_tell(OggVorbis_File *vf);
+extern ogg_int64_t real_ov_pcm_total(OggVorbis_File *vf, int i);
+extern int real_ov_raw_seek(OggVorbis_File *vf, ogg_int64_t pos);
+extern ogg_int64_t real_ov_raw_tell(OggVorbis_File *vf);
+extern ogg_int64_t real_ov_raw_total(OggVorbis_File *vf, int i);
 extern long real_ov_read(OggVorbis_File *vf, char *buffer, int length, int bigendianp, int word, int sgned, int *bitstream);
+extern long real_ov_seekable(OggVorbis_File *vf);
+extern long real_ov_serialnumber(OggVorbis_File *vf, int i);
+extern long real_ov_streams(OggVorbis_File *vf);
+extern int real_ov_test(FILE *f, OggVorbis_File *vf, const char *initial, long ibytes);
+extern int real_ov_test_callbacks(void *datasource, OggVorbis_File *vf, const char *initial, long ibytes, ov_callbacks callbacks);
+extern int real_ov_test_open(OggVorbis_File *vf);
+extern int real_ov_time_seek(OggVorbis_File *vf, double pos);
+extern int real_ov_time_seek_page(OggVorbis_File *vf, double pos);
+extern double real_ov_time_tell(OggVorbis_File *vf);
+extern double real_ov_time_total(OggVorbis_File *vf, int i);
 
 #define VF_CACHE_MAGIC 0x43335646u
 #define MAX_PCM_CACHE 512
@@ -28,7 +44,7 @@ static size_t g_pcm_bytes;
 static int g_pending_entries;
 
 typedef struct {
-    char name[256];
+    char name[512];
     int channels;
     long rate;
     ogg_int64_t pcm_total;
@@ -120,7 +136,8 @@ int ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial,
         int streaming = -1;
         const char *fname = get_cossacks_vorbis_filename(datasource, vf, &streaming);
 
-        if (fname && streaming == 0 && strstr(fname, "ambient") == NULL && strstr(fname, "AMBIENT") == NULL) {
+        if (fname && streaming == 0 && strlen(fname) < sizeof(g_cache[0].name) &&
+            strstr(fname, "ambient") == NULL && strstr(fname, "AMBIENT") == NULL) {
             EnterCriticalSection(&g_cache_cs);
             PcmCacheEntry *found = NULL;
             for (int i = 0; i < g_cache_count; i++) {
@@ -237,6 +254,22 @@ static inline VfCachedState *get_cached_state(OggVorbis_File *vf) {
     return (st->magic == VF_CACHE_MAGIC && st->entry != NULL) ? st : NULL;
 }
 
+#ifndef OV_EINVAL
+#define OV_EINVAL -131
+#endif
+
+long ov_bitrate(OggVorbis_File *vf, int i) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return (i > 0) ? (long)OV_EINVAL : st->entry->vi.bitrate_nominal;
+    return real_ov_bitrate(vf, i);
+}
+
+long ov_bitrate_instant(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return st->entry->vi.bitrate_nominal;
+    return real_ov_bitrate_instant(vf);
+}
+
 vorbis_info *ov_info(OggVorbis_File *vf, int link) {
     VfCachedState *st = get_cached_state(vf);
     if (st) return &st->entry->vi;
@@ -251,22 +284,113 @@ vorbis_comment *ov_comment(OggVorbis_File *vf, int link) {
 
 ogg_int64_t ov_pcm_total(OggVorbis_File *vf, int i) {
     VfCachedState *st = get_cached_state(vf);
-    if (st) return st->entry->pcm_total;
+    if (st) return (i > 0) ? (ogg_int64_t)OV_EINVAL : st->entry->pcm_total;
     return real_ov_pcm_total(vf, i);
+}
+
+ogg_int64_t ov_raw_total(OggVorbis_File *vf, int i) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return (i > 0) ? (ogg_int64_t)OV_EINVAL : (ogg_int64_t)st->entry->pcm_bytes;
+    return real_ov_raw_total(vf, i);
+}
+
+double ov_time_total(OggVorbis_File *vf, int i) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) {
+        if (i > 0 || st->entry->rate <= 0) return (double)OV_EINVAL;
+        return (double)st->entry->pcm_total / (double)st->entry->rate;
+    }
+    return real_ov_time_total(vf, i);
+}
+
+long ov_seekable(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return 1;
+    return real_ov_seekable(vf);
+}
+
+long ov_serialnumber(OggVorbis_File *vf, int i) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return (i > 0) ? -1L : 1L;
+    return real_ov_serialnumber(vf, i);
+}
+
+long ov_streams(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return 1;
+    return real_ov_streams(vf);
+}
+
+ogg_int64_t ov_pcm_tell(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) {
+        size_t frame_bytes = (size_t)st->entry->channels * 2u;
+        return frame_bytes ? (ogg_int64_t)(st->read_byte_offset / frame_bytes) : 0;
+    }
+    return real_ov_pcm_tell(vf);
+}
+
+ogg_int64_t ov_raw_tell(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return (ogg_int64_t)st->read_byte_offset;
+    return real_ov_raw_tell(vf);
+}
+
+double ov_time_tell(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) {
+        if (st->entry->rate <= 0) return 0.0;
+        return (double)ov_pcm_tell(vf) / (double)st->entry->rate;
+    }
+    return real_ov_time_tell(vf);
 }
 
 long ov_read(OggVorbis_File *vf, char *buffer, int length, int bigendianp, int word, int sgned, int *bitstream) {
     VfCachedState *st = get_cached_state(vf);
     if (st) {
+        if ((bigendianp != 0 && bigendianp != 1) || (word != 1 && word != 2) || (sgned != 0 && sgned != 1)) {
+            return OV_EINVAL;
+        }
         if (bitstream) *bitstream = 0;
-        if (st->read_byte_offset >= st->entry->pcm_bytes || length <= 0) {
+        if (length <= 0) return 0;
+        if (!buffer) return OV_EINVAL;
+        if (st->read_byte_offset >= st->entry->pcm_bytes) {
             return 0;
         }
         size_t rem = st->entry->pcm_bytes - st->read_byte_offset;
-        size_t to_copy = (size_t)length < rem ? (size_t)length : rem;
-        memcpy(buffer, st->entry->pcm_data + st->read_byte_offset, to_copy);
-        st->read_byte_offset += to_copy;
-        return (long)to_copy;
+        if (bigendianp == 0 && word == 2 && sgned == 1) {
+            size_t to_copy = (size_t)length < rem ? (size_t)length : rem;
+            to_copy &= ~(size_t)1u;
+            if (to_copy == 0) return 0;
+            memcpy(buffer, st->entry->pcm_data + st->read_byte_offset, to_copy);
+            st->read_byte_offset += to_copy;
+            return (long)to_copy;
+        }
+        size_t avail_samples = rem / 2u;
+        size_t req_samples = (size_t)length / (size_t)word;
+        size_t samples = req_samples < avail_samples ? req_samples : avail_samples;
+        if (samples == 0) return 0;
+        const uint8_t *src = st->entry->pcm_data + st->read_byte_offset;
+        uint8_t *dst = (uint8_t *)buffer;
+        for (size_t i = 0; i < samples; i++) {
+            uint16_t raw = (uint16_t)src[i * 2u] | ((uint16_t)src[i * 2u + 1u] << 8);
+            int16_t s16 = (int16_t)raw;
+            if (word == 1) {
+                int8_t s8 = (int8_t)(s16 >> 8);
+                dst[i] = sgned ? (uint8_t)s8 : (uint8_t)((int)s8 + 128);
+            } else {
+                uint16_t u16 = sgned ? (uint16_t)s16 : (uint16_t)((int32_t)s16 + 32768);
+                if (bigendianp) {
+                    dst[i * 2u] = (uint8_t)(u16 >> 8);
+                    dst[i * 2u + 1u] = (uint8_t)(u16 & 0xFFu);
+                } else {
+                    dst[i * 2u] = (uint8_t)(u16 & 0xFFu);
+                    dst[i * 2u + 1u] = (uint8_t)(u16 >> 8);
+                }
+            }
+        }
+        st->read_byte_offset += samples * 2u;
+        return (long)(samples * (size_t)word);
     }
     return real_ov_read(vf, buffer, length, bigendianp, word, sgned, bitstream);
 }
@@ -282,19 +406,64 @@ int ov_pcm_seek(OggVorbis_File *vf, ogg_int64_t pos) {
     return real_ov_pcm_seek(vf, pos);
 }
 
-int ov_raw_seek(OggVorbis_File *vf, ogg_int64_t pos) {
+int ov_pcm_seek_page(OggVorbis_File *vf, ogg_int64_t pos) {
     VfCachedState *st = get_cached_state(vf);
     if (st) return ov_pcm_seek(vf, pos);
+    return real_ov_pcm_seek_page(vf, pos);
+}
+
+int ov_raw_seek(OggVorbis_File *vf, ogg_int64_t pos) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) {
+        size_t frame_bytes = (size_t)st->entry->channels * 2u;
+        if (pos <= 0 || frame_bytes == 0) {
+            st->read_byte_offset = 0;
+            return 0;
+        }
+        if ((uint64_t)pos >= (uint64_t)st->entry->pcm_bytes) {
+            st->read_byte_offset = st->entry->pcm_bytes;
+            return 0;
+        }
+        st->read_byte_offset = ((size_t)pos / frame_bytes) * frame_bytes;
+        return 0;
+    }
     return real_ov_raw_seek(vf, pos);
 }
 
 int ov_time_seek(OggVorbis_File *vf, double pos) {
     VfCachedState *st = get_cached_state(vf);
     if (st) {
+        if (!(pos > 0.0)) return ov_pcm_seek(vf, 0);
+        double max_sec = st->entry->rate > 0 ? (double)st->entry->pcm_total / (double)st->entry->rate : 0.0;
+        if (pos >= max_sec) return ov_pcm_seek(vf, st->entry->pcm_total);
         ogg_int64_t sample_pos = (ogg_int64_t)(pos * (double)st->entry->rate);
         return ov_pcm_seek(vf, sample_pos);
     }
     return real_ov_time_seek(vf, pos);
+}
+
+int ov_time_seek_page(OggVorbis_File *vf, double pos) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return ov_time_seek(vf, pos);
+    return real_ov_time_seek_page(vf, pos);
+}
+
+int ov_open(FILE *f, OggVorbis_File *vf, const char *initial, long ibytes) {
+    return real_ov_open(f, vf, initial, ibytes);
+}
+
+int ov_test(FILE *f, OggVorbis_File *vf, const char *initial, long ibytes) {
+    return real_ov_test(f, vf, initial, ibytes);
+}
+
+int ov_test_callbacks(void *datasource, OggVorbis_File *vf, const char *initial, long ibytes, ov_callbacks callbacks) {
+    return real_ov_test_callbacks(datasource, vf, initial, ibytes, callbacks);
+}
+
+int ov_test_open(OggVorbis_File *vf) {
+    VfCachedState *st = get_cached_state(vf);
+    if (st) return 0;
+    return real_ov_test_open(vf);
 }
 
 int ov_clear(OggVorbis_File *vf) {
@@ -351,7 +520,7 @@ static inline void call_orig_4a7890(const float *p1, const float *p2, const floa
         "call *%[fn]\n\t"
         : "+a"(p1), "+d"(p2), "+c"(p3)
         : [out_pt] "r"(out_pt), [fn] "r"(fn)
-        : "cc", "memory"
+        : "cc", "memory", "st", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"
     );
 }
 
@@ -363,7 +532,7 @@ static inline float call_orig_4a8078(const float *center, const float *corners_n
         "fstps %[res]\n\t"
         : "+a"(center), "+d"(corners_near), "+c"(corners_far), [res] "=m"(res)
         : [fn] "r"(fn)
-        : "cc", "memory"
+        : "cc", "memory", "st", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"
     );
     return res;
 }

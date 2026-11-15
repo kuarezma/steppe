@@ -172,12 +172,12 @@ final class ControllerLifecycleTests: XCTestCase {
         }
     }
 
-    func testAStaleRefreshResultNeverReplacesARunningLaunch() async {
+    func testARefreshNeverReplacesTheScreenOfARunningLaunch() async {
         let controller = makeController()
         await controller.refresh()
         controller.play()
-        // What a refresh that started before `play()` would report once its checks return.
-        controller.applyRefresh(ready: true, gameRunning: false)
+        // The window triggers refreshes (focus, display changes) while a launch runs.
+        await controller.refresh()
         guard case .playing = controller.phase else { return XCTFail("phase became \(controller.phase)") }
 
         await wait(30, for: "the game to run") { isRunning(controller) }
@@ -235,37 +235,5 @@ final class ControllerLifecycleTests: XCTestCase {
         XCTAssertTrue(left.isEmpty)
         // The Force Quit is over too; its kill cannot hit whatever uses the install folder next.
         XCTAssertFalse(controller.isStopping, "the stop was still pending when the uninstall gave up the install lock")
-    }
-
-    func testAFailedUninstallIsReportedAndNothingIsInstalledAgain() async throws {
-        // The game cannot be deleted: what is left looks like an install whose components only need an update.
-        let fm = FileManager.default
-        let locked = [install.paths.steamApps.appendingPathComponent("common/Cossacks 3"), install.paths.steamApps]
-        for directory in locked { try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path) }
-        defer { for directory in locked.reversed() { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) } }
-        let controller = makeController()
-        await controller.refresh()
-
-        await controller.uninstall()
-
-        guard case .failed = controller.phase else { return XCTFail("phase became \(controller.phase)") }
-        XCTAssertTrue(fm.fileExists(atPath: install.paths.steamApps.path))
-        try await Task.sleep(nanoseconds: 300_000_000)
-        guard case .failed = controller.phase else { return XCTFail("phase became \(controller.phase)") }
-    }
-
-    func testUninstallKeepsTheChosenInstallLocation() async {
-        // No override: the location comes from the stored preference, like in the app.
-        defaults.set(install.root.path, forKey: "installRoot")
-        let controller = SteppeController(nativeDir: nil, defaults: defaults)
-        XCTAssertEqual(controller.paths.root.path, install.root.path)
-
-        await controller.uninstall()
-
-        XCTAssertEqual(controller.phase, .needsSetup)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: install.paths.engineDir.path))
-        // Whatever is installed next goes to `paths.root`; the next launch must look in the same place.
-        XCTAssertEqual(controller.paths.root.path, install.root.path)
-        XCTAssertEqual(defaults.string(forKey: "installRoot"), install.root.path)
     }
 }

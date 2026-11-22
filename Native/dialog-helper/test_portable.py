@@ -51,7 +51,7 @@ static void GetWindowTextA(HWND w,char *s,int n) { snprintf(s,(size_t)n,"%s",w==
 static void EnumChildWindows(HWND w,BOOL (*callback)(HWND,LPARAM),LPARAM p) {
  (void)w;for(int i=0;i<buttons;i++)callback((HWND)(uintptr_t)2,p);
 }
-static void GetClientRect(HWND w,RECT *r) { (void)w;*r=(RECT){0,0,100,30}; }
+static BOOL GetClientRect(HWND w,RECT *r) { (void)w;*r=(RECT){0,0,100,30};return TRUE; }
 static BOOL GetWindowRect(HWND w,RECT *r) { (void)w;*r=(RECT){0,0,win_w,win_h};return TRUE; }
 static void PostMessageA(HWND w,int msg,int key,LPARAM pos) { (void)w;(void)msg;(void)key;(void)pos;posts++; }
 '''

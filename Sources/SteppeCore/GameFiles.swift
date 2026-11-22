@@ -375,13 +375,11 @@ public enum GameFiles {
         let fm = FileManager.default
         var restored = 0
         var record = readInstalledRecord(in: gameDir)
-        let hudPaths = Set([hudMatRelativePath, resourcePanelRelativePath])
         for name in names {
             let target = gameDir.appendingPathComponent(name)
             let backup = target.appendingPathExtension("steppe-orig")
             guard fm.fileExists(atPath: backup.path) else { continue }
-            if hudPaths.contains(name),
-               let currentHash = try? Hashing.sha256(of: target),
+            if let currentHash = try? Hashing.sha256(of: target),
                currentHash != record[name],
                currentHash != (try? Hashing.sha256(of: backup)) {
                 try? fm.removeItem(at: backup)

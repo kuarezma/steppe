@@ -141,6 +141,10 @@ static uintptr_t getCurrentShareGroup(void) {
   return sg ? (uintptr_t)sg : (uintptr_t)ctx;
 }
 
+uintptr_t glfix_get_cur_sharegroup(void) {
+  return getCurrentShareGroup();
+}
+
 static ProgInfo *findProg(uintptr_t prog, int create) {
   uintptr_t sg = getCurrentShareGroup();
   for (int i = 0; i < g_nprogs; i++) {
@@ -360,15 +364,19 @@ static void gfx_UniformMatrix4fv(GLint loc, GLsizei count, GLboolean t, const GL
 static void gfx_ProgramUniformMatrix4fv(GLuint prog, GLint loc, GLsizei count, GLboolean t, const GLfloat *v) {
   GLint prevProg = 0;
   glGetIntegerv(0x8B8D , &prevProg);
+  CGLContextObj prevCtx = g_curCtx;
   uintptr_t prevCur = g_curProg;
 
+  g_curCtx = CGLGetCurrentContext();
   g_curProg = (uintptr_t)prog;
   glUseProgram(prog);
+  loc = pbemu_bone_loc(loc, count);
   if (!remapMatrix4fv(loc, count, t, v, glUniformMatrix4fvARB)) {
     glUniformMatrix4fvARB(loc, count, t, v);
   }
 
   glUseProgram((GLuint)prevProg);
+  g_curCtx = prevCtx;
   g_curProg = prevCur ? prevCur : (uintptr_t)prevProg;
 }
 

@@ -7,11 +7,12 @@ import subprocess
 
 pb = Path('pbemu.c').read_text()
 gfx = Path('glfix.c').read_text()
-shader = pb[pb.index('static char *patch_bush_shader('):pb.index('static void pb_ShaderSourceARB(GLhandleARB sh, GLsizei count, const GLcharARB **str, const GLint *len) {')]
+shader = pb[pb.index('static pthread_once_t g_bt_once'):pb.index('static void pb_ShaderSourceARB(GLhandleARB sh, GLsizei count, const GLcharARB **str, const GLint *len) {')]
 bone = pb[pb.index('void pbemu_forget_program(uintptr_t p);'):]
 lifecycle = gfx[gfx.index('static void gfx_LinkProgramARB('):gfx.index('static void gfx_UniformMatrix4fvARB(')]
 prefix = r'''
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,7 +27,9 @@ typedef char GLchar;
 #define glfix_trace(...) ((void)0)
 #define DYLD_INTERPOSE(a,b)
 static GLint queried_location=7;
+static uintptr_t mock_sharegroup=1;
 static int queries,links,deletes;
+uintptr_t glfix_get_cur_sharegroup(void) { return mock_sharegroup; }
 static uintptr_t glfix_get_cur_prog(void) { return 42; }
 static void glGetIntegerv(int name,GLint *v) { (void)name;*v=42; }
 static GLint glGetUniformLocation(GLuint p,const char *name) { (void)p;(void)name;queries++;return queried_location; }
@@ -48,13 +51,22 @@ int main(int argc,char **argv) {
  if(argc>1) {
   int n=0;assert(patch_bush_shader(1,NULL,NULL,&n)==NULL);
   assert(patch_bush_shader(0,NULL,NULL,&n)==NULL);
-  const char *src="vec3 n=normalize(gl_NormalMatrix*gl_Normal);";
+  const char *src="vec3 n=normalize(gl_NormalMatrix*gl_Normal);\nvec3 a=normalize(gl_NormalMatrix*gl_Normal);";
+  // Second line has different variable name, test two identical occurrences of the guarded pattern:
+  const char *multi="vec3 n=normalize(gl_NormalMatrix*gl_Normal);\nvec3 n=normalize(gl_NormalMatrix*gl_Normal);";
   char *patched=patch_bush_shader(1,&src,NULL,&n);
   assert(patched && strstr(patched,"dot(n,n)>1e-20") && n==(int)strlen(patched));free(patched);
-  puts("PASS shader: NULL input, empty input and normal guard");return 0;
+  char *mpatched=patch_bush_shader(1,&multi,NULL,&n);
+  assert(mpatched && n==(int)strlen(mpatched));
+  char *first=strstr(mpatched,"dot(n,n)>1e-20");
+  assert(first && strstr(first+1,"dot(n,n)>1e-20"));
+  free(mpatched);
+  puts("PASS shader: NULL input, empty input and multi-match normal guard");return 0;
  }
  assert(pbemu_bone_loc(-1,42)==-1 && queries==0);
  assert(pbemu_bone_loc(3,42)==7);
+ mock_sharegroup=2;queried_location=25;assert(pbemu_bone_loc(3,42)==25);
+ mock_sharegroup=1;assert(pbemu_bone_loc(3,42)==7);
  queried_location=9;pb_LinkProgram(42);assert(pbemu_bone_loc(3,42)==9);
  queried_location=11;pb_LinkProgramARB(42);assert(pbemu_bone_loc(3,42)==11);
  queried_location=13;gfx_LinkProgram(42);assert(pbemu_bone_loc(3,42)==13);
@@ -63,10 +75,11 @@ int main(int argc,char **argv) {
  queried_location=19;gfx_DeleteObjectARB(42);assert(pbemu_bone_loc(3,42)==19);
  queried_location=-1;pb_LinkProgram(42);assert(pbemu_bone_loc(3,42)==3);
  assert(links==5 && deletes==2);
- puts("PASS BONEFIX: negative location, relink and delete via core/ARB and direct/resolved paths");
+ puts("PASS BONEFIX: negative location, share-group isolation, relink and delete via core/ARB and direct/resolved paths");
  return 0;
 }
 '''
+Path('build').mkdir(exist_ok=True)
 Path('build/test_safety.c').write_text(prefix + shader + bone + lifecycle + suffix)
 subprocess.run([os.environ.get('HOST_CC', 'clang'), '-std=c11', '-Wall', '-Wextra', '-Werror',
                 '-pthread', 'build/test_safety.c', '-o', 'build/test_safety'], check=True)

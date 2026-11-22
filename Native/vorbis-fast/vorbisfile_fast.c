@@ -38,6 +38,9 @@ extern double real_ov_time_tell(OggVorbis_File *vf);
 extern double real_ov_time_total(OggVorbis_File *vf, int i);
 
 #define VF_CACHE_MAGIC 0x43335646u
+#ifndef OV_HOLE
+#define OV_HOLE -3
+#endif
 #define MAX_PCM_CACHE 512
 #define MAX_PCM_BYTES (128u * 1024u * 1024u)
 static size_t g_pcm_bytes;
@@ -100,6 +103,25 @@ static const char *get_cossacks_vorbis_filename(void *datasource, OggVorbis_File
     return fname;
 }
 
+static int contains_ascii_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle || !*needle) return 0;
+    for (const char *h = haystack; *h; h++) {
+        const char *a = h;
+        const char *b = needle;
+        while (*a && *b) {
+            unsigned char ca = (unsigned char)*a;
+            unsigned char cb = (unsigned char)*b;
+            if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+            if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+            if (ca != cb) break;
+            a++;
+            b++;
+        }
+        if (*b == '\0') return 1;
+    }
+    return 0;
+}
+
 static int is_filename_cached(const char *fname) {
     if (!fname || fname[0] == '\0') return 0;
     init_cache_if_needed();
@@ -137,7 +159,7 @@ int ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial,
         const char *fname = get_cossacks_vorbis_filename(datasource, vf, &streaming);
 
         if (fname && streaming == 0 && strlen(fname) < sizeof(g_cache[0].name) &&
-            strstr(fname, "ambient") == NULL && strstr(fname, "AMBIENT") == NULL) {
+            !contains_ascii_ci(fname, "ambient")) {
             EnterCriticalSection(&g_cache_cs);
             PcmCacheEntry *found = NULL;
             for (int i = 0; i < g_cache_count; i++) {
@@ -165,7 +187,7 @@ int ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial,
             vorbis_info *vi = real_ov_info(vf, -1);
             vorbis_comment *vc = real_ov_comment(vf, -1);
             ogg_int64_t total_samples = real_ov_pcm_total(vf, -1);
-            if (vi && vc && total_samples > 0 && vi->channels > 0 && total_samples <= (3 * 1024 * 1024) / (vi->channels * (ogg_int64_t)2)) {
+            if (vi && vc && real_ov_streams(vf) == 1 && total_samples > 0 && vi->channels > 0 && total_samples <= (3 * 1024 * 1024) / (vi->channels * (ogg_int64_t)2)) {
                 vorbis_info vi_copy = *vi;
                 vorbis_comment vc_copy = *vc;
                 vc_copy.user_comments = NULL;
@@ -188,9 +210,15 @@ int ov_open_callbacks(void *datasource, OggVorbis_File *vf, const char *initial,
                 if (buf) {
                     size_t got = 0;
                     int bs = 0;
+                    int hole_retries = 0;
                     while (got < total_bytes) {
                         long r = real_ov_read(vf, (char *)(buf + got), (int)(total_bytes - got), 0, 2, 1, &bs);
+                        if (r == OV_HOLE) {
+                            if (++hole_retries > 16) break;
+                            continue;
+                        }
                         if (r <= 0) break;
+                        hole_retries = 0;
                         got += (size_t)r;
                     }
 
@@ -357,18 +385,23 @@ long ov_read(OggVorbis_File *vf, char *buffer, int length, int bigendianp, int w
         if (st->read_byte_offset >= st->entry->pcm_bytes) {
             return 0;
         }
+        size_t channels = (size_t)st->entry->channels;
+        if (channels == 0) return OV_EINVAL;
+        size_t src_frame_bytes = channels * 2u;
         size_t rem = st->entry->pcm_bytes - st->read_byte_offset;
         if (bigendianp == 0 && word == 2 && sgned == 1) {
             size_t to_copy = (size_t)length < rem ? (size_t)length : rem;
-            to_copy &= ~(size_t)1u;
+            to_copy -= to_copy % src_frame_bytes;
             if (to_copy == 0) return 0;
             memcpy(buffer, st->entry->pcm_data + st->read_byte_offset, to_copy);
             st->read_byte_offset += to_copy;
             return (long)to_copy;
         }
-        size_t avail_samples = rem / 2u;
-        size_t req_samples = (size_t)length / (size_t)word;
-        size_t samples = req_samples < avail_samples ? req_samples : avail_samples;
+        size_t out_frame_bytes = channels * (size_t)word;
+        size_t src_frames = rem / src_frame_bytes;
+        size_t req_frames = (size_t)length / out_frame_bytes;
+        size_t frames = req_frames < src_frames ? req_frames : src_frames;
+        size_t samples = frames * channels;
         if (samples == 0) return 0;
         const uint8_t *src = st->entry->pcm_data + st->read_byte_offset;
         uint8_t *dst = (uint8_t *)buffer;
@@ -494,6 +527,7 @@ __attribute__((naked)) static void detour_4a4af4(void) {
 __attribute__((used)) static float __cdecl fast_plane_dist_sse(const float *plane, const float *pt) {
     float nx = plane[0], ny = plane[1], nz = plane[2], d = plane[3];
     float len2 = nx * nx + ny * ny + nz * nz;
+    if (len2 <= 0.0f) return 0.0f;
     float dot = nx * pt[0] + ny * pt[1] + nz * pt[2] + d;
     float len;
     __m128 v = _mm_set_ss(len2);

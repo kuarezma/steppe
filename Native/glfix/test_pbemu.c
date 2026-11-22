@@ -48,7 +48,10 @@ int main(int argc, char **argv) {
   CHECK(fbp == fb, "pbuffer make-current re-binds fbo");
   CGLSetCurrentContext(b);
   GLuint tex; glGenTextures(1, &tex); glBindTexture(GL_TEXTURE_2D, tex);
+  glPixelStorei(GL_PACK_ALIGNMENT, 4);
   CHECK(CGLTexImagePBuffer(b, pb, GL_FRONT_LEFT) == kCGLNoError, "teximage pbuffer");
+  GLint packAfter = 0; glGetIntegerv(GL_PACK_ALIGNMENT, &packAfter);
+  CHECK(packAfter == 4, "teximage pbuffer restores GL_PACK_ALIGNMENT");
   unsigned char px[64 * 64 * 4] = {0};
   glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
   printf("texel0 = %u %u %u %u\n", px[0], px[1], px[2], px[3]);

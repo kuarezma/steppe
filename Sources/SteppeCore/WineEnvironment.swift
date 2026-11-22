@@ -28,6 +28,14 @@ public struct WineEnvironment: Sendable {
         return env
     }
 
+    /// Environment for non-GL Windows helper tools (`list-modes.exe`, `dismiss-dialog.exe`).
+    public func tool() -> [String: String] {
+        var env = common()
+        env["WINEDEBUG"] = "-all"
+        env["C3_VORBIS_CACHE"] = "0"
+        return env
+    }
+
     private static let allowedHostKeys: Set<String> = [
         "PATH", "HOME", "TMPDIR", "TERM", "COLORTERM", "SHELL",
         "COMMAND_MODE", "DISPLAY", "XPC_FLAGS", "XPC_SERVICE_NAME",

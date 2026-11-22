@@ -1,6 +1,6 @@
 import Foundation
 
-struct DiagnosticsSnapshot {
+struct DiagnosticsSnapshot: Sendable {
     let system: SystemInfo
     let display: DisplayInfo?
     let displayModes: DisplayModes?
@@ -12,20 +12,53 @@ struct DiagnosticsSnapshot {
     let freeBytes: Int64
     let gameManifest: AppManifestInfo?
     let paths: SteppePaths
+    let manifest: RuntimeManifest
     let leaks: [String]
+
+    init(
+        system: SystemInfo,
+        display: DisplayInfo?,
+        displayModes: DisplayModes?,
+        resolution: Resolution,
+        settings: AppSettings,
+        microphoneStatus: MicrophoneStatus,
+        stageSummary: [String],
+        phase: String,
+        freeBytes: Int64,
+        gameManifest: AppManifestInfo?,
+        paths: SteppePaths,
+        manifest: RuntimeManifest = .current,
+        leaks: [String]
+    ) {
+        self.system = system
+        self.display = display
+        self.displayModes = displayModes
+        self.resolution = resolution
+        self.settings = settings
+        self.microphoneStatus = microphoneStatus
+        self.stageSummary = stageSummary
+        self.phase = phase
+        self.freeBytes = freeBytes
+        self.gameManifest = gameManifest
+        self.paths = paths
+        self.manifest = manifest
+        self.leaks = leaks
+    }
 }
 
 /// Builds a plain-text report users can attach to bug reports. Personal data is redacted.
 enum Diagnostics {
     @MainActor
-    static func export(controller: SteppeController) throws -> URL {
+    static func export(controller: SteppeController) async throws -> URL {
         let snapshot = controller.diagnosticsSnapshot
-        let text = sanitizedReport(for: snapshot)
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let url = snapshot.paths.logsDir.appendingPathComponent("diagnostics-\(stamp).txt")
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data(text.utf8).write(to: url, options: .atomic)
-        return url
+        return try await Task.detached(priority: .userInitiated) {
+            let text = sanitizedReport(for: snapshot)
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let url = snapshot.paths.logsDir.appendingPathComponent("diagnostics-\(stamp).txt")
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url, options: .atomic)
+            return url
+        }.value
     }
 
     static func sanitizedReport(for snapshot: DiagnosticsSnapshot) -> String {
@@ -58,7 +91,7 @@ enum Diagnostics {
         lines.append("Settings: quitSteamAfterGame=\(s.settings.quitSteamAfterGame) speedPatches=\(s.settings.enableSpeedPatches) notchHUD=\(s.settings.enableNotchHUD) multithreaded=\(s.settings.multithreadedEngine) mic=\(s.settings.enableMicrophone) mathPatches=\(s.settings.experimentalMathPatches) frameTimes=\(s.settings.recordFrameTimes)")
         lines.append("Microphone permission: \(s.microphoneStatus.rawValue)")
         lines.append("Free disk: \(ByteCountFormatter.string(fromByteCount: s.freeBytes, countStyle: .file))")
-        lines.append("Engine: \(RuntimeManifest.current.engine.name), frameworks: \(RuntimeManifest.current.template.name)")
+        lines.append("Engine: \(s.manifest.engine.name), frameworks: \(s.manifest.template.name)")
         lines.append("Phase: \(s.phase)")
         lines.append("Stages:")
         lines.append(contentsOf: s.stageSummary.map { "  \($0)" })

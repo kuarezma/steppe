@@ -22,6 +22,8 @@ Usage:
   steppe-cli resolution  WIDTH HEIGHT [preset]
   steppe-cli notch-hud   [--root DIR] [--enable | --disable]
   steppe-cli --help
+
+Default --root is ~/Library/Application Support/Steppe.
 """
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
@@ -100,6 +102,16 @@ while idx < rawArgs.count {
     }
 }
 
+if stopAtSignIn && command != "setup" && command != "repair" {
+    fail("--stop-at-sign-in is only valid with setup or repair", code: 2)
+}
+if forceEnableNotch != nil && command != "notch-hud" {
+    fail("--enable/--disable is only valid with notch-hud", code: 2)
+}
+if native != nil && !["status", "setup", "repair", "play"].contains(command) {
+    fail("--native is only valid with status, setup, repair, or play", code: 2)
+}
+
 func describe(_ state: StageState) -> String {
     switch state {
     case .pending: return "pending"
@@ -173,7 +185,7 @@ func run() async {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
     case "diagnostics":
-        do { print(try controller.exportDiagnostics().path) } catch { fail("\(error)") }
+        do { print(try await controller.exportDiagnostics().path) } catch { fail("\(error)") }
     case "notch-hud":
         guard let gameDir = SteamKit(paths: controller.paths, manifest: RuntimeManifest.current).gameDirectory else {
             fail("Cossacks 3 is not installed in this prefix")

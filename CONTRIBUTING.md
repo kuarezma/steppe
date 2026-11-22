@@ -7,7 +7,7 @@ Thank you for helping! Bug reports, compatibility reports, translations, tests, 
 ```bash
 git clone https://github.com/kuarezma/steppe && cd steppe
 brew install mingw-w64                     # for the Windows helper DLLs
-swift test                                 # unit tests (75+, run in about a second)
+swift test                                 # unit tests (100+, run in about a second)
 python3 Scripts/extract-strings.py --check # every UI string has an English and Turkish entry
 make -C Native/glfix test                  # OpenGL shim tests (needs a normal desktop session)
 make -C Native/vorbis-fast test            # audio cache and startup patch tests
@@ -49,7 +49,7 @@ User-facing text uses the English sentence as its key. Add the key to `Resources
 
 ## Adding another game
 
-Steppe is built around one game today (`RuntimeManifest.steam.appID`, `GameBootstrap`, `ProfileTuner`). To support another Steam game, the pieces to generalise are: the app ID and display name, the game's config files and first-run requirements, which patches/DLLs apply, and the profile tuner. Open an issue first so we can agree on the shape (a `GameDefinition` type is the intended direction).
+Steppe is built around one game today (`GameProfile` in `Sources/SteppeCore/GameProfile.swift`, `GameBootstrap`, `ProfileTuner`). To support another Steam game, the pieces to generalise are: the app ID and display name, the game's config files and first-run requirements, which patches/DLLs apply, and the profile tuner. Open an issue first so we can agree on the shape (extending `GameProfile` is the intended direction).
 
 ## Updating the Wine engine
 

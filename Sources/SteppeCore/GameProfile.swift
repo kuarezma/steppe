@@ -11,6 +11,12 @@ public struct GameProfile: Sendable, Equatable {
     public let crashSignatures: [String]
     public let minimumFreeBytes: Int64
 
+    /// Free space required after the Wine engine is already on disk.
+    public var requiredFreeBytesAfterEngine: Int64 { minimumFreeBytes + 3_000_000_000 }
+
+    /// Free space required before downloading the Wine engine and the game.
+    public var requiredFreeBytesInitial: Int64 { minimumFreeBytes + 8_000_000_000 }
+
     public init(
         id: String,
         displayName: String,

@@ -142,8 +142,11 @@ struct SetupView: View {
     }
 
     private func copyDiagnostics() {
-        guard let url = try? controller.exportDiagnostics(), let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        Task {
+            guard let url = try? await controller.exportDiagnostics(),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
     }
 }

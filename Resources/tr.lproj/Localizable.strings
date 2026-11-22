@@ -53,6 +53,7 @@
 "Enable speed patches" = "Hız yamalarını etkinleştir";
 "Export Diagnostics" = "Tanılamayı Dışa Aktar";
 "Faster geometry code (experimental)" = "Daha hızlı geometri kodu (deneysel)";
+"Folder does not exist yet." = "Klasör henüz oluşturulmadı.";
 "Force Quit Game" = "Oyunu Zorla Kapat";
 "Game" = "Oyun";
 "Graphics libraries" = "Grafik kütüphaneleri";
@@ -76,6 +77,7 @@
 "Multithreaded game engine" = "Çok iş parçacıklı oyun motoru";
 "Native" = "Yerel";
 "Never" = "Hiçbir zaman";
+"No modified game files to restore." = "Geri yüklenecek değiştirilmiş oyun dosyası yok.";
 "Not available yet" = "Henüz yok";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Yeterli boş disk alanı yok: %@ gerekli, %@ mevcut. Yer açın veya başka bir disk seçin.";
 "Not requested yet" = "Henüz istenmedi";
@@ -111,6 +113,7 @@
 "Restart Steppe to apply the language." = "Dili uygulamak için Steppe'i yeniden başlatın.";
 "Restarting Steam" = "Steam yeniden başlatılıyor";
 "Restore Original Game Files" = "Özgün Oyun Dosyalarını Geri Yükle";
+"Restored 1 original file. It is replaced again on the next launch." = "1 özgün dosya geri yüklendi. Bir sonraki başlatmada yeniden değiştirilir.";
 "Restored %@ original files. They are replaced again on the next launch." = "%@ özgün dosya geri yüklendi. Bir sonraki başlatmada yeniden değiştirilirler.";
 "Right now" = "Şu an";
 "Rosetta 2 is needed" = "Rosetta 2 gerekli";

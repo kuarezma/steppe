@@ -110,14 +110,29 @@ public enum WinePatcher {
                    (info.stdout + info.stderr).contains("Signature=adhoc") {
                     continue
                 }
-                _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", binary.path], timeout: 30)
+                do {
+                    let result = try await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", binary.path], timeout: 30)
+                    if !result.succeeded {
+                        Log.shared.warn("Could not sign \(binary.lastPathComponent): exit \(result.exitCode)")
+                    }
+                } catch {
+                    Log.shared.warn("Could not sign \(binary.lastPathComponent): \(error.localizedDescription)")
+                }
                 continue
             }
-            if let inspect = try? await ProcessRunner.run(codesign, arguments: ["-d", "--entitlements", "-", binary.path], timeout: 15),
+            if let verify = try? await ProcessRunner.run(codesign, arguments: ["--verify", "--strict", binary.path], timeout: 15), verify.succeeded,
+               let inspect = try? await ProcessRunner.run(codesign, arguments: ["-d", "--entitlements", "-", binary.path], timeout: 15), inspect.succeeded,
                (inspect.stdout + inspect.stderr).contains("com.apple.security.device.audio-input") {
                 continue
             }
-            _ = try? await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", "--entitlements", entFile.path, binary.path], timeout: 30)
+            do {
+                let result = try await ProcessRunner.run(codesign, arguments: ["--force", "--sign", "-", "--timestamp=none", "--entitlements", entFile.path, binary.path], timeout: 30)
+                if !result.succeeded {
+                    Log.shared.warn("Could not sign \(binary.lastPathComponent): exit \(result.exitCode)")
+                }
+            } catch {
+                Log.shared.warn("Could not sign \(binary.lastPathComponent): \(error.localizedDescription)")
+            }
         }
     }
 

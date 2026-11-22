@@ -4,10 +4,12 @@ import Foundation
 public struct SteppePaths: Sendable {
     public let root: URL
     public let profile: GameProfile
+    public let engineArchiveRoot: String
 
-    public init(root: URL, profile: GameProfile = .cossacks3) {
+    public init(root: URL, profile: GameProfile = .cossacks3, engineArchiveRoot: String = RuntimeManifest.current.engineArchiveRoot) {
         self.root = root
         self.profile = profile
+        self.engineArchiveRoot = engineArchiveRoot
     }
 
     /// `~/Library/Application Support/Steppe`
@@ -18,14 +20,13 @@ public struct SteppePaths: Sendable {
     }
 
     public var engineDir: URL { root.appendingPathComponent("engine", isDirectory: true) }
-    public var wineBundle: URL { engineDir.appendingPathComponent(RuntimeManifest.current.engineArchiveRoot, isDirectory: true) }
+    public var wineBundle: URL { engineDir.appendingPathComponent(engineArchiveRoot, isDirectory: true) }
     public var wineBinary: URL { wineBundle.appendingPathComponent("bin/wine") }
     public var wineserverBinary: URL { wineBundle.appendingPathComponent("bin/wineserver") }
     public var frameworksDir: URL { root.appendingPathComponent("frameworks", isDirectory: true) }
     public var downloadsDir: URL { root.appendingPathComponent("downloads", isDirectory: true) }
     public var logsDir: URL { root.appendingPathComponent("logs", isDirectory: true) }
     public var prefixDir: URL { root.appendingPathComponent("prefixes/\(profile.prefixDirectoryName)", isDirectory: true) }
-    public var stateFile: URL { root.appendingPathComponent("state.json") }
     public var settingsFile: URL { root.appendingPathComponent("settings.json") }
     public var rootMarker: URL { root.appendingPathComponent(".steppe-root.json") }
     public var engineMarker: URL { engineDir.appendingPathComponent(".steppe-engine.json") }

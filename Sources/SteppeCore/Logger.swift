@@ -25,6 +25,13 @@ public final class Log: @unchecked Sendable {
         }
     }
 
+    /// Synchronously detaches the active log file after draining pending log writes.
+    public func detachAndFlush() {
+        queue.sync {
+            self.fileURL = nil
+        }
+    }
+
     public func info(_ message: @autoclosure () -> String) { write("INFO", message()) }
     public func warn(_ message: @autoclosure () -> String) { write("WARN", message()) }
     public func error(_ message: @autoclosure () -> String) { write("ERROR", message()) }

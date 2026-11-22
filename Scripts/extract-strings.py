@@ -11,7 +11,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = [ROOT / "Sources/Steppe", ROOT / "Sources/SteppeCore"]
 
-SWIFTUI_CALLS = r'(?:Text|Button|Label|Section|Picker|Toggle|LabeledContent|Link|Chip\(symbol:\s*"[^"]*",\s*text:)'
 PATTERNS = [
     re.compile(r'\b(?:Text|Button|Label|Section|Picker|Toggle|LabeledContent|Link)\(\s*"((?:[^"\\]|\\.)*)"'),
     re.compile(r'\.alert\(\s*"((?:[^"\\]|\\.)*)"'),

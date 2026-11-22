@@ -12,6 +12,7 @@ import subprocess
 
 source = Path('vorbisfile_fast.c').read_text()
 layout = source[source.index('typedef struct {'):source.index('static PcmCacheEntry g_cache')]
+Path('build').mkdir(exist_ok=True)
 Path('build/test_cached_layout.c').write_text(
     '#include <stdint.h>\n#include <stddef.h>\n#include "vorbis/vorbisfile.h"\n' + layout +
     '_Static_assert(offsetof(OggVorbis_File, datasource) == 0, "overlay base");\n'
@@ -105,12 +106,14 @@ int main(void) {
  entry.vi.bitrate_nominal=192000;
  assert(ov_bitrate(&vf,-1)==192000 && ov_bitrate_instant(&vf)==192000);
  assert(ov_read(&vf,(char *)out,4,0,4,1,&bs)==OV_EINVAL);
- // Verify BE16 and 8-bit conversion paths on known 16-bit signed LE sample 0x0102 -> 258
- pcm[0]=0x02; pcm[1]=0x01;
- assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,2,1,2,1,&bs)==2);
- assert(out[0]==0x01 && out[1]==0x02);
- assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,1,0,1,0,&bs)==1);
- assert(out[0]==(uint8_t)((int)(int8_t)0x01 + 128));
+ // Verify BE16 and 8-bit conversion paths on stereo 1-frame reads (2 channels) and frame-aligned fast reads
+ pcm[0]=0x02; pcm[1]=0x01; pcm[2]=0x04; pcm[3]=0x03;
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,2,0,2,1,&bs)==0);
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,6,0,2,1,&bs)==4);
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,4,1,2,1,&bs)==4);
+ assert(out[0]==0x01 && out[1]==0x02 && out[2]==0x03 && out[3]==0x04);
+ assert(ov_pcm_seek(&vf,0)==0 && ov_read(&vf,(char *)out,2,0,1,0,&bs)==2);
+ assert(out[0]==(uint8_t)((int)(int8_t)0x01 + 128) && out[1]==(uint8_t)((int)(int8_t)0x03 + 128));
  assert(ov_pcm_seek(&vf,100)==0 && ov_raw_tell(&vf)==400);
  assert(ov_raw_seek(&vf,12)==0 && ov_raw_tell(&vf)==12 && ov_pcm_tell(&vf)==3);
  assert(ov_raw_seek(&vf,13)==0 && ov_raw_tell(&vf)==12);
@@ -152,6 +155,9 @@ int main(void) {
  char longname[600]; memset(longname,'a',sizeof longname-5); strcpy(longname+sizeof longname-5,".ogg");
  *(const char **)(object.bytes+8)=longname;
  g_cache_count=0;
+ assert(ov_open_callbacks(datasource,game_vf,NULL,0,callbacks)==0);
+ assert(g_cache_count==0 && !get_cached_state(game_vf));
+ *(const char **)(object.bytes+8)="Ambient_Loop.ogg";
  assert(ov_open_callbacks(datasource,game_vf,NULL,0,callbacks)==0);
  assert(g_cache_count==0 && !get_cached_state(game_vf));
  assert(ov_open(NULL,&vf,NULL,0)==0 && ov_test(NULL,&vf,NULL,0)==0 && ov_test_callbacks(NULL,&vf,NULL,0,(ov_callbacks){0})==0);

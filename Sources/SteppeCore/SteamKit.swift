@@ -75,7 +75,11 @@ public struct SteamKit: Sendable {
 
     public var gameDirectory: URL? {
         guard let info = appManifest, !info.installDir.isEmpty else { return nil }
-        return paths.steamApps.appendingPathComponent("common/\(info.installDir)", isDirectory: true)
+        let common = paths.steamApps.appendingPathComponent("common", isDirectory: true).standardizedFileURL
+        let candidate = common.appendingPathComponent(info.installDir, isDirectory: true).standardizedFileURL
+        let prefix = common.path.hasSuffix("/") ? common.path : common.path + "/"
+        guard candidate.path.hasPrefix(prefix), candidate.path != common.path else { return nil }
+        return candidate
     }
 
     public var isGameInstalled: Bool {

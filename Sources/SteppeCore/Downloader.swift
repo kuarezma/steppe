@@ -124,11 +124,10 @@ public enum Downloader {
 
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                delegate.continuation = continuation
-                task.resume()
+                delegate.attach(continuation: continuation, task: task)
             }
         } onCancel: {
-            task.cancel()
+            delegate.cancel(task: task)
         }
     }
 }
@@ -138,8 +137,12 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
     let metaURL: URL
     var resumeOffset: Int64
     let progress: @Sendable (DownloadProgress) -> Void
-    var continuation: CheckedContinuation<Void, Error>?
 
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var completed = false
+    private var cancelled = false
+    private var completionError: Error?
     private var handle: FileHandle?
     private var received: Int64
     private var total: Int64 = 0
@@ -152,6 +155,33 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
         self.resumeOffset = resumeOffset
         self.received = resumeOffset
         self.progress = progress
+    }
+
+    func attach(continuation: CheckedContinuation<Void, Error>, task: URLSessionDataTask) {
+        lock.lock()
+        if completed {
+            let err = completionError ?? CancellationError()
+            lock.unlock()
+            continuation.resume(throwing: err)
+            return
+        }
+        if cancelled {
+            completed = true
+            lock.unlock()
+            task.cancel()
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+        task.resume()
+    }
+
+    func cancel(task: URLSessionDataTask) {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+        task.cancel()
     }
 
     private static func validator(from response: HTTPURLResponse) -> String? {
@@ -175,12 +205,12 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
         let fm = FileManager.default
         switch http.statusCode {
         case 206:
-            total = resumeOffset + http.expectedContentLength
+            total = http.expectedContentLength > 0 ? resumeOffset + http.expectedContentLength : 0
         case 200:
             // Server ignored the range request or If-Range detected a newer remote file: start over.
             resumeOffset = 0
             received = 0
-            total = http.expectedContentLength
+            total = max(0, http.expectedContentLength)
             try? fm.removeItem(at: part)
             try? fm.removeItem(at: metaURL)
         case 416:
@@ -226,15 +256,24 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         try? handle?.close()
         handle = nil
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        let finalError: Error? = failure ?? (cancelled ? CancellationError() : error)
         let cont = continuation
         continuation = nil
-        if let failure {
-            cont?.resume(throwing: failure)
-        } else if let error {
-            cont?.resume(throwing: error)
-        } else {
-            progress(DownloadProgress(received: received, total: max(total, received)))
-            cont?.resume()
+        completionError = finalError
+        lock.unlock()
+        if let cont {
+            if let finalError {
+                cont.resume(throwing: finalError)
+            } else {
+                progress(DownloadProgress(received: received, total: max(total, received)))
+                cont.resume()
+            }
         }
     }
 }

@@ -34,7 +34,7 @@ struct WelcomeView: View {
                     .background(Color.white.opacity(0.06), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!updater.canCheck)
+                .disabled(!updater.canCheck || controller.isBusy)
                 .help(Text("Check for Updates…"))
 
                 Button {
@@ -151,7 +151,6 @@ struct WelcomeView: View {
         panel.message = String(localized: "Choose where Steppe should keep its files. A folder named Steppe is created there.")
         if panel.runModal() == .OK, let url = panel.url {
             controller.setInstallLocation(url)
-            Task { await controller.refresh() }
         }
     }
 }

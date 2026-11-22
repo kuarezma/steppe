@@ -68,8 +68,8 @@ static BOOL CALLBACK inspect_window(HWND window, LPARAM param) {
     EnumChildWindows(window, inspect_child, (LPARAM)&s);
     if (s.buttons == 1 && s.ok_button) {
         // The game's Delphi button ignores BM_CLICK; a posted mouse click is what it reacts to.
-        RECT r;
-        GetClientRect(s.ok_button, &r);
+        RECT r = {0};
+        if (!GetClientRect(s.ok_button, &r)) return TRUE;
         LPARAM center = MAKELPARAM((r.right - r.left) / 2, (r.bottom - r.top) / 2);
         PostMessageA(s.ok_button, WM_LBUTTONDOWN, MK_LBUTTON, center);
         PostMessageA(s.ok_button, WM_LBUTTONUP, 0, center);

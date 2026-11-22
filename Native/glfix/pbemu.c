@@ -8,6 +8,7 @@
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -104,6 +105,11 @@ static void ensure_objects(Assoc *a) {
     pb->sharegroup = sg;
   } else if (pb->sharegroup != sg) {
     glfix_trace("PBEMU WARNING ctx=%p not in pbuffer share group; contents not visible", (void *)a->ctx);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)prevTex);
+    glBindRenderbuffer(GL_RENDERBUFFER, (GLuint)prevRb);
+    a->ready = 1;
+    a->active = 0;
+    return;
   }
   glGenFramebuffers(1, &a->fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, a->fbo);
@@ -246,10 +252,12 @@ static CGLError pb_CGLSetCurrentContext(CGLContextObj ctx) {
     GLint cur = 0;
     if (caller_is_winemac(ra)) {
       if (!a->ready) ensure_objects(a);
-      glGetIntegerv(GL_FRAMEBUFFER_BINDING, &cur);
-      if (!a->active && cur == 0) glBindFramebuffer(GL_FRAMEBUFFER, a->fbo);
-      { static int nt; if (nt++ < 20) glfix_trace("PBEMU current pbuffer ctx=%p fb_before=%d", (void *)ctx, cur); }
-      a->active = 1;
+      if (a->fbo) {
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &cur);
+        if (!a->active && cur == 0) glBindFramebuffer(GL_FRAMEBUFFER, a->fbo);
+        { static int nt; if (nt++ < 20) glfix_trace("PBEMU current pbuffer ctx=%p fb_before=%d", (void *)ctx, cur); }
+        a->active = 1;
+      }
     } else if (a->active) {
       glGetIntegerv(GL_FRAMEBUFFER_BINDING, &cur);
       if ((GLuint)cur == a->fbo) {
@@ -278,13 +286,17 @@ static CGLError pb_CGLTexImagePBuffer(CGLContextObj ctx, CGLPBufferObj obj, GLen
   if (!px) { pthread_mutex_unlock(&g_pmu); return kCGLBadAlloc; }
   CGLContextObj cur = CGLGetCurrentContext();
   if (a->ctx != cur) CGLSetCurrentContext(a->ctx);
-  GLint prevRead = 0;
+  GLint prevRead = 0, prevReadBuf = GL_BACK, prevPack = 4;
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevRead);
+  glGetIntegerv(GL_READ_BUFFER, &prevReadBuf);
+  glGetIntegerv(GL_PACK_ALIGNMENT, &prevPack);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, a->fbo);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glReadPixels(0, 0, pb->w, pb->h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+  glPixelStorei(GL_PACK_ALIGNMENT, prevPack);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevRead);
+  glReadBuffer((GLenum)prevReadBuf);
   if (a->ctx != cur) CGLSetCurrentContext(cur);
   GLsizei w = pb->w, h = pb->h;
   GLenum target = pb->target, ifmt = pb->ifmt;
@@ -368,12 +380,17 @@ static int source_has_version(GLsizei count, const GLchar *const *str, const GLi
   return 0;
 }
 
+static pthread_once_t g_bt_once = PTHREAD_ONCE_INIT;
+static int g_bt_nanguard = 1;
+static void init_bushtest(void) {
+  const char *bt = getenv("GLFIX_BUSHTEST");
+  g_bt_nanguard = (!bt || !*bt || !strcmp(bt, "nanguard"));
+}
+
 static char *patch_bush_shader(GLsizei count, const GLchar *const *str, const GLint *len, int *out_len) {
   if (count <= 0 || !str) return NULL;
-
-  const char *bt = getenv("GLFIX_BUSHTEST");
-  if (!bt || !*bt) bt = "nanguard";
-  if (strcmp(bt, "nanguard")) return NULL;
+  pthread_once(&g_bt_once, init_bushtest);
+  if (!g_bt_nanguard) return NULL;
   size_t total = 0;
   for (GLsizei i = 0; i < count; i++) {
     if (!str[i]) continue;
@@ -381,7 +398,8 @@ static char *patch_bush_shader(GLsizei count, const GLchar *const *str, const GL
     total += n;
   }
   if (total == 0) return NULL;
-  char *buf = (char *)malloc(total + 1024);
+  size_t cap = total + 1024;
+  char *buf = (char *)malloc(cap);
   if (!buf) return NULL;
   size_t pos = 0;
   for (GLsizei i = 0; i < count; i++) {
@@ -392,28 +410,44 @@ static char *patch_bush_shader(GLsizei count, const GLchar *const *str, const GL
   }
   buf[pos] = '\0';
 
-  if (!strcmp(bt, "nanguard")) {
-    static const char *const from[] = { "vec3 n=normalize(gl_NormalMatrix*gl_Normal);",
-                                         "vec3 n=normalize(gl_NormalMatrix*anorm.xyz);" };
-    static const char *const to[] = { "vec3 n=gl_NormalMatrix*gl_Normal; n=dot(n,n)>1e-20?normalize(n):vec3(0.0);",
-                                       "vec3 n=gl_NormalMatrix*anorm.xyz; n=dot(n,n)>1e-20?normalize(n):vec3(0.0);" };
-    int hits = 0;
-    for (int k = 0; k < 2; k++) {
-      char *p = strstr(buf, from[k]);
-      if (!p) continue;
-      size_t fl = strlen(from[k]), tl = strlen(to[k]), tail = strlen(p + fl);
+  static const char *const from[] = {
+    "vec3 n=normalize(gl_NormalMatrix*gl_Normal);",
+    "vec3 n=normalize(gl_NormalMatrix*anorm.xyz);"
+  };
+  static const char *const to[] = {
+    "vec3 n=gl_NormalMatrix*gl_Normal; n=dot(n,n)>1e-20?normalize(n):vec3(0.0);",
+    "vec3 n=gl_NormalMatrix*anorm.xyz; n=dot(n,n)>1e-20?normalize(n):vec3(0.0);"
+  };
+  int hits = 0;
+  for (int k = 0; k < 2; k++) {
+    size_t fl = strlen(from[k]), tl = strlen(to[k]);
+    size_t offset = 0;
+    char *p;
+    while ((p = strstr(buf + offset, from[k])) != NULL) {
+      size_t idx = (size_t)(p - buf);
+      size_t cur_len = strlen(buf);
+      size_t needed = cur_len - fl + tl + 1;
+      if (needed > cap) {
+        size_t new_cap = cap * 2;
+        if (new_cap < needed) new_cap = needed + 256;
+        char *grown = (char *)realloc(buf, new_cap);
+        if (!grown) { free(buf); return NULL; }
+        buf = grown;
+        cap = new_cap;
+        p = buf + idx;
+      }
+      size_t tail = cur_len - (idx + fl);
       memmove(p + tl, p + fl, tail + 1);
       memcpy(p, to[k], tl);
+      offset = idx + tl;
       hits++;
     }
-    if (!hits) { free(buf); return NULL; }
-    glfix_trace("NANGUARD normal guard applied len=%zu", strlen(buf));
-    *out_len = (int)strlen(buf);
-    return buf;
   }
-
-  free(buf);
-  return NULL;
+  if (!hits) { free(buf); return NULL; }
+  size_t final_len = strlen(buf);
+  glfix_trace("NANGUARD normal guard applied len=%zu", final_len);
+  *out_len = (int)final_len;
+  return buf;
 }
 
 static void pb_ShaderSourceARB(GLhandleARB sh, GLsizei count, const GLcharARB **str, const GLint *len) {
@@ -468,12 +502,32 @@ DYLD_INTERPOSE(pb_ShaderSourceARB, glShaderSourceARB)
 DYLD_INTERPOSE(pb_ShaderSource, glShaderSource)
 
 void pbemu_forget_program(uintptr_t p);
+uintptr_t glfix_get_cur_sharegroup(void);
 __attribute__((unused)) static void pb_LinkProgram(GLuint p) { pbemu_forget_program(p); glLinkProgram(p); }
 __attribute__((unused)) static void pb_LinkProgramARB(GLhandleARB p) { pbemu_forget_program((uintptr_t)p); glLinkProgramARB(p); }
 
-#define MAXBP 8192
-static int16_t g_boneLoc[MAXBP];
-void pbemu_forget_program(uintptr_t p) { if (p < MAXBP) g_boneLoc[p] = 0; }
+#define MAXBP_CACHE 512
+typedef struct {
+  uintptr_t sg;
+  uintptr_t prog;
+  GLint loc;
+} BoneLocEntry;
+static BoneLocEntry g_boneLoc[MAXBP_CACHE];
+static int g_boneLocCount = 0;
+static int g_boneLocNextEvict = 0;
+static pthread_mutex_t g_boneMu = PTHREAD_MUTEX_INITIALIZER;
+
+void pbemu_forget_program(uintptr_t p) {
+  uintptr_t sg = glfix_get_cur_sharegroup();
+  pthread_mutex_lock(&g_boneMu);
+  for (int i = 0; i < g_boneLocCount; i++) {
+    if (g_boneLoc[i].prog == p && (!g_boneLoc[i].sg || !sg || g_boneLoc[i].sg == sg)) {
+      g_boneLoc[i] = g_boneLoc[--g_boneLocCount];
+      i--;
+    }
+  }
+  pthread_mutex_unlock(&g_boneMu);
+}
 
 GLint pbemu_bone_loc(GLint loc, GLsizei count) {
   if (loc >= 0 && count > 1) {
@@ -481,15 +535,47 @@ GLint pbemu_bone_loc(GLint loc, GLsizei count) {
     if (prog <= 0) {
       glGetIntegerv(GL_CURRENT_PROGRAM, &prog);
     }
-    if (prog > 0 && prog < MAXBP) {
-      if (!g_boneLoc[prog]) {
-        GLint b = glGetUniformLocation((GLuint)prog, "boneMatrices");
-        g_boneLoc[prog] = (int16_t)(b >= 0 ? b + 1 : -1);
+    if (prog > 0) {
+      uintptr_t sg = glfix_get_cur_sharegroup();
+      GLint b = -1;
+      int cached = 0;
+      pthread_mutex_lock(&g_boneMu);
+      for (int i = 0; i < g_boneLocCount; i++) {
+        if (g_boneLoc[i].sg == sg && g_boneLoc[i].prog == (uintptr_t)prog) {
+          b = g_boneLoc[i].loc;
+          cached = 1;
+          break;
+        }
       }
-      GLint b = g_boneLoc[prog] - 1;
+      pthread_mutex_unlock(&g_boneMu);
+      if (!cached) {
+        b = glGetUniformLocation((GLuint)prog, "boneMatrices");
+        pthread_mutex_lock(&g_boneMu);
+        int found = 0;
+        for (int i = 0; i < g_boneLocCount; i++) {
+          if (g_boneLoc[i].sg == sg && g_boneLoc[i].prog == (uintptr_t)prog) {
+            g_boneLoc[i].loc = b;
+            found = 1;
+            break;
+          }
+        }
+        if (!found) {
+          int slot;
+          if (g_boneLocCount < MAXBP_CACHE) {
+            slot = g_boneLocCount++;
+          } else {
+            slot = g_boneLocNextEvict;
+            g_boneLocNextEvict = (g_boneLocNextEvict + 1) % MAXBP_CACHE;
+          }
+          g_boneLoc[slot] = (BoneLocEntry){ sg, (uintptr_t)prog, b };
+        }
+        pthread_mutex_unlock(&g_boneMu);
+      }
       if (b >= 0 && loc != b) {
-        static int nlog;
-        if (nlog++ < 5) glfix_trace("BONEFIX prog=%d loc=%d -> %d count=%d", prog, loc, b, count);
+        static _Atomic int nlog = 0;
+        if (atomic_fetch_add_explicit(&nlog, 1, memory_order_relaxed) < 5) {
+          glfix_trace("BONEFIX prog=%d loc=%d -> %d count=%d", prog, loc, b, count);
+        }
         loc = b;
       }
     }

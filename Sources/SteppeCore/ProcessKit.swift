@@ -18,16 +18,83 @@ public enum ProcessFailure: Error, LocalizedError {
         case .launchFailed(let m): return L("Could not start %@", m)
         case .timedOut(let m): return L("%@ did not finish in time", m)
         case .nonZeroExit(let m, let r):
-            return L("%@ failed (exit %d)", m, r.exitCode) + ": " + Redaction.redact(String(r.stderr.suffix(400)))
+            return L("%@ failed (exit %d)", m, r.exitCode) + ": " + String(Redaction.redact(r.stderr).suffix(400))
         }
     }
 }
 
-private final class Accumulator: @unchecked Sendable {
+private final class PipeDrain: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()
-    func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
-    func text() -> String { lock.lock(); defer { lock.unlock() }; return String(decoding: data, as: UTF8.self) }
+    private var closed = false
+
+    func readAvailable(from handle: FileHandle) {
+        lock.lock()
+        if closed {
+            lock.unlock()
+            handle.readabilityHandler = nil
+            return
+        }
+        let chunk = handle.availableData
+        let isEOF = chunk.isEmpty
+        if isEOF {
+            closed = true
+        } else {
+            data.append(chunk)
+        }
+        lock.unlock()
+        if isEOF { handle.readabilityHandler = nil }
+    }
+
+    func finish(handle: FileHandle) {
+        handle.readabilityHandler = nil
+        lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return }
+        closed = true
+        data.append(handle.readDataToEndOfFile())
+    }
+
+    func cancel(handle: FileHandle) {
+        handle.readabilityHandler = nil
+        lock.lock()
+        closed = true
+        lock.unlock()
+    }
+
+    func text() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
+private final class ProcessState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var timedOut = false
+    private var cancelled = false
+    private var stopped = false
+    private var terminated = false
+
+    var wasTimedOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
+    var wasCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+    var isTerminated: Bool { lock.lock(); defer { lock.unlock() }; return terminated }
+
+    func markTerminated() {
+        lock.lock()
+        terminated = true
+        lock.unlock()
+    }
+
+    func requestStop(asCancel: Bool, asTimeout: Bool) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if asCancel { cancelled = true }
+        if asTimeout { timedOut = true }
+        if terminated || stopped { return false }
+        stopped = true
+        return true
+    }
 }
 
 public enum ProcessRunner {
@@ -50,27 +117,28 @@ public enum ProcessRunner {
         process.standardOutput = outPipe
         process.standardError = errPipe
         process.standardInput = FileHandle.nullDevice
-        let out = Accumulator(), err = Accumulator()
-        outPipe.fileHandleForReading.readabilityHandler = { out.append($0.availableData) }
-        errPipe.fileHandleForReading.readabilityHandler = { err.append($0.availableData) }
+        let out = PipeDrain(), err = PipeDrain()
+        outPipe.fileHandleForReading.readabilityHandler = { out.readAvailable(from: $0) }
+        errPipe.fileHandleForReading.readabilityHandler = { err.readAvailable(from: $0) }
 
         let label = executable.lastPathComponent
-        let timedOut = TimeoutFlag()
+        let state = ProcessState()
         // A task that was cancelled before we got here must not start anything.
         if Task.isCancelled {
-            outPipe.fileHandleForReading.readabilityHandler = nil
-            errPipe.fileHandleForReading.readabilityHandler = nil
+            out.cancel(handle: outPipe.fileHandleForReading)
+            err.cancel(handle: errPipe.fileHandleForReading)
             throw CancellationError()
         }
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
                 process.terminationHandler = { proc in
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    errPipe.fileHandleForReading.readabilityHandler = nil
-                    out.append(outPipe.fileHandleForReading.readDataToEndOfFile())
-                    err.append(errPipe.fileHandleForReading.readDataToEndOfFile())
-                    if timedOut.value {
+                    state.markTerminated()
+                    out.finish(handle: outPipe.fileHandleForReading)
+                    err.finish(handle: errPipe.fileHandleForReading)
+                    if state.wasCancelled {
+                        continuation.resume(throwing: CancellationError())
+                    } else if state.wasTimedOut {
                         continuation.resume(throwing: ProcessFailure.timedOut(label))
                     } else {
                         continuation.resume(returning: CommandResult(exitCode: proc.terminationStatus, stdout: out.text(), stderr: err.text()))
@@ -79,35 +147,31 @@ public enum ProcessRunner {
                 do {
                     try process.run()
                 } catch {
-                    outPipe.fileHandleForReading.readabilityHandler = nil
-                    errPipe.fileHandleForReading.readabilityHandler = nil
+                    out.cancel(handle: outPipe.fileHandleForReading)
+                    err.cancel(handle: errPipe.fileHandleForReading)
                     continuation.resume(throwing: ProcessFailure.launchFailed("\(label): \(error.localizedDescription)"))
                     return
                 }
                 // Cancellation can arrive between the check above and `run()`; stop the fresh process right away.
-                if Task.isCancelled { Self.stop(process) }
+                if Task.isCancelled { Self.stop(process, state: state, asCancel: true, asTimeout: false) }
                 if let timeout {
                     DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                        guard process.isRunning else { return }
-                        timedOut.set()
-                        process.terminate()
-                        DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
-                            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-                        }
+                        Self.stop(process, state: state, asCancel: false, asTimeout: true)
                     }
                 }
             }
         } onCancel: {
-            Self.stop(process)
+            Self.stop(process, state: state, asCancel: true, asTimeout: false)
         }
     }
 
     /// SIGTERM first, SIGKILL if the process ignores it.
-    private static func stop(_ process: Process) {
+    private static func stop(_ process: Process, state: ProcessState, asCancel: Bool, asTimeout: Bool) {
+        guard state.requestStop(asCancel: asCancel, asTimeout: asTimeout) else { return }
         guard process.isRunning else { return }
         process.terminate()
         DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            if !state.isTerminated && process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
     }
 
@@ -126,13 +190,6 @@ public enum ProcessRunner {
         }
         return result
     }
-}
-
-private final class TimeoutFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    var value: Bool { lock.lock(); defer { lock.unlock() }; return flag }
-    func set() { lock.lock(); flag = true; lock.unlock() }
 }
 
 /// A process on the system, as reported by `ps`.

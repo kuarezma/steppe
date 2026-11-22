@@ -25,7 +25,7 @@ struct ReadyView: View {
                     .background(Color.white.opacity(0.06), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!updater.canCheck)
+                .disabled(!updater.canCheck || controller.isBusy)
                 .help(Text("Check for Updates…"))
 
                 Button {

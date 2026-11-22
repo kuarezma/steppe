@@ -53,6 +53,7 @@
 "Enable speed patches" = "Enable speed patches";
 "Export Diagnostics" = "Export Diagnostics";
 "Faster geometry code (experimental)" = "Faster geometry code (experimental)";
+"Folder does not exist yet." = "Folder does not exist yet.";
 "Force Quit Game" = "Force Quit Game";
 "Game" = "Game";
 "Graphics libraries" = "Graphics libraries";
@@ -76,6 +77,7 @@
 "Multithreaded game engine" = "Multithreaded game engine";
 "Native" = "Native";
 "Never" = "Never";
+"No modified game files to restore." = "No modified game files to restore.";
 "Not available yet" = "Not available yet";
 "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk." = "Not enough free disk space: %@ needed, %@ available. Free up space or choose another disk.";
 "Not requested yet" = "Not requested yet";
@@ -111,6 +113,7 @@
 "Restart Steppe to apply the language." = "Restart Steppe to apply the language.";
 "Restarting Steam" = "Restarting Steam";
 "Restore Original Game Files" = "Restore Original Game Files";
+"Restored 1 original file. It is replaced again on the next launch." = "Restored 1 original file. It is replaced again on the next launch.";
 "Restored %@ original files. They are replaced again on the next launch." = "Restored %@ original files. They are replaced again on the next launch.";
 "Right now" = "Right now";
 "Rosetta 2 is needed" = "Rosetta 2 is needed";

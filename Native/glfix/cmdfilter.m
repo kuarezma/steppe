@@ -17,6 +17,10 @@ static void cmdfilter_install(void) {
     if (++g_ticks >= 600 && g_timer) {
       glfix_trace("CMDFILTER timed out waiting for NSApp");
       dispatch_source_cancel(g_timer);
+#if !__has_feature(objc_arc)
+      dispatch_release(g_timer);
+#endif
+      g_timer = NULL;
     }
     return;
   }
@@ -31,6 +35,10 @@ static void cmdfilter_install(void) {
                                                     }];
   glfix_trace("CMDFILTER installed monitor=%p", (void *)g_monitor);
   dispatch_source_cancel(g_timer);
+#if !__has_feature(objc_arc)
+  dispatch_release(g_timer);
+#endif
+  g_timer = NULL;
 }
 
 __attribute__((constructor)) static void cmdfilter_init(void) {

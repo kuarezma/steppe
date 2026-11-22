@@ -85,12 +85,12 @@ Make sure the **Remember me** checkbox is ticked in Steam's Windows login window
 
 - Look for the Steam window: Steam may be updating itself, prompting for Steam Guard, or waiting for you to accept a dialog.
 - Open **Settings → Maintenance → Repair…** to re-verify engine hashes, prefix permissions, and helper binaries.
-- If you manually moved or renamed your Steppe folder, the internal prefix symlinks will break. Re-select the folder in Settings or run a repair.
+- If you manually moved or renamed your Steppe folder, the internal prefix symlinks will break. Before installing, you can pick a folder on the Welcome screen; after installing, run **Settings → Maintenance → Repair…** or uninstall and choose the new location.
 
 ## Black units, missing textures or visual artifacts
 
 The Cossacks 3 rendering engine relies on fixed OpenGL profiles. Steppe's `glfix` library shims shader versions and emulates legacy PBuffers with modern Framebuffer Objects (FBOs).
-- Verify that *Settings → Advanced → Math patches* is kept OFF (the shipping default).
+- Verify that *Settings → Advanced → Faster geometry code (experimental)* is kept OFF (the shipping default).
 - Capture frame times via *Settings → Advanced → Record frame times*, play a busy match, quit, and attach `logs/game-session.log` and *Settings → Export Diagnostics* to an issue.
 
 ## Low frame rate or stuttering

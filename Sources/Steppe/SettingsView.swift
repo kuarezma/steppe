@@ -27,9 +27,10 @@ struct SettingsView: View {
     }
 
     private var resolutionChoices: [Resolution] {
-        // Once Windows has reported its modes, offer exactly those: anything else is snapped before launch anyway.
-        var list = controller.displayModes?.all.filter { $0.width >= ResolutionPlanner.minimum.width }
-            ?? ResolutionPlanner.choices(display: controller.display?.size ?? Resolution(width: 1440, height: 900))
+        // Once Windows has reported its modes, offer those; custom resolutions are written as chosen.
+        var list = controller.displayModes?.all.filter {
+            $0.width >= ResolutionPlanner.minimum.width && $0.height >= ResolutionPlanner.minimum.height
+        } ?? ResolutionPlanner.choices(display: controller.display?.size ?? Resolution(width: 1440, height: 900))
         if !list.contains(controller.settings.customResolution) { list.append(controller.settings.customResolution) }
         return list.sorted { $0.pixels < $1.pixels }
     }
@@ -127,8 +128,8 @@ struct SettingsView: View {
                 }
                 HStack {
                     Button("Export Diagnostics") { exportDiagnostics() }
-                    Button("Show Logs") { NSWorkspace.shared.open(controller.paths.logsDir) }
-                    Button("Open Steppe Folder") { NSWorkspace.shared.open(controller.paths.root) }
+                    Button("Show Logs") { openFolder(controller.paths.logsDir) }
+                    Button("Open Steppe Folder") { openFolder(controller.paths.root) }
                 }
                 Button("Uninstall Everything…", role: .destructive) { confirmUninstall = true }.disabled(busy)
                 if let toast { Text(verbatim: toast).font(.caption).foregroundStyle(.secondary) }
@@ -188,18 +189,36 @@ struct SettingsView: View {
     }
 
     private func exportDiagnostics() {
-        do {
-            let url = try controller.exportDiagnostics()
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-            toast = String(localized: "Diagnostics saved. Personal data is removed from the file.")
-        } catch {
-            toast = error.localizedDescription
+        Task {
+            do {
+                let url = try await controller.exportDiagnostics()
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                toast = String(localized: "Diagnostics saved. Personal data is removed from the file.")
+            } catch {
+                toast = error.localizedDescription
+            }
         }
     }
 
+    private func openFolder(_ url: URL) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            toast = String(localized: "Folder does not exist yet.")
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     private func restoreOriginalFiles() {
-        let count = String(controller.restoreOriginalGameFiles())
-        toast = String(localized: "Restored \(count) original files. They are replaced again on the next launch.")
+        let count = controller.restoreOriginalGameFiles()
+        switch count {
+        case 0:
+            toast = String(localized: "No modified game files to restore.")
+        case 1:
+            toast = String(localized: "Restored 1 original file. It is replaced again on the next launch.")
+        default:
+            toast = String(localized: "Restored \(String(count)) original files. They are replaced again on the next launch.")
+        }
     }
 
     private func openMicrophonePrivacySettings() {

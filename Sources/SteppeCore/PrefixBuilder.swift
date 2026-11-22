@@ -44,7 +44,7 @@ public enum PrefixError: Error, LocalizedError {
 
 public enum PrefixBuilder {
     /// Creates a fresh 64-bit Windows prefix and applies Steppe's isolation and stability tweaks.
-    public static func create(runner: WineRunner, environment: [String: String]) async throws {
+    public static func create(runner: WineRunner, environment: [String: String], manifest: RuntimeManifest = .current) async throws {
         let paths = runner.paths
         let fm = FileManager.default
         if hasUserData(paths: paths) { throw PrefixError.refusingToDeleteGameData }
@@ -65,7 +65,7 @@ public enum PrefixBuilder {
               fm.fileExists(atPath: paths.driveC.appendingPathComponent("windows").path) else {
             throw PrefixError.creationFailed
         }
-        let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)
+        let marker = ComponentMarker(name: "prefix", checksum: manifest.engine.sha256, patchRevision: manifest.patchRevision)
         try marker.write(paths.prefixMarker)
     }
 
@@ -100,9 +100,9 @@ public enum PrefixBuilder {
     }
 
     /// True when the prefix was created by a different engine than the installed one.
-    public static func needsUpdate(paths: SteppePaths) -> Bool {
+    public static func needsUpdate(paths: SteppePaths, manifest: RuntimeManifest = .current) -> Bool {
         guard let marker = ComponentMarker.read(paths.prefixMarker) else { return false }
-        return marker.checksum != RuntimeManifest.current.engine.sha256 || marker.patchRevision != RuntimeManifest.current.patchRevision
+        return marker.checksum != manifest.engine.sha256 || marker.patchRevision != manifest.patchRevision
     }
 
     /// Anything the user would lose by deleting the prefix: an installed Steam library, game, or saves/profiles.
@@ -121,14 +121,14 @@ public enum PrefixBuilder {
     }
 
     /// Lets a newer engine adopt an existing prefix (`wineboot -u`) and refresh registry settings without touching Steam or the game.
-    public static func update(runner: WineRunner, environment: [String: String]) async throws {
+    public static func update(runner: WineRunner, environment: [String: String], manifest: RuntimeManifest = .current) async throws {
         try await runner.runChecked(["wineboot", "-u"], environment: environment, timeout: 600)
         await runner.waitForIdle(environment: environment, timeout: 120)
         try isolate(prefix: runner.paths.prefixDir)
         try await applyRegistrySettings(runner: runner, environment: environment)
         await runner.waitForIdle(environment: environment, timeout: 120)
         try isolate(prefix: runner.paths.prefixDir)
-        let marker = ComponentMarker(name: "prefix", checksum: RuntimeManifest.current.engine.sha256, patchRevision: RuntimeManifest.current.patchRevision)
+        let marker = ComponentMarker(name: "prefix", checksum: manifest.engine.sha256, patchRevision: manifest.patchRevision)
         try marker.write(runner.paths.prefixMarker)
     }
 

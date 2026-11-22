@@ -27,13 +27,51 @@ public enum ProfileConfig {
         return result
     }
 
-    /// Returns the updated text with `UseMultithreadedMode` set, or `nil` if the setting is not present.
+    /// Returns the updated text with `UseMultithreadedMode` set, or inserts it inside `Engine` when missing.
+    /// Returns `nil` only if the file has no `Engine` block.
     public static func settingMultithreaded(_ enabled: Bool, in text: String) -> String? {
-        guard let (range, current) = multithreadedValueRange(in: text) else { return nil }
-        if current == enabled { return text }
+        if let (range, current) = multithreadedValueRange(in: text) {
+            if current == enabled { return text }
+            var result = text
+            result.replaceSubrange(range, with: enabled ? "True" : "False")
+            return result
+        }
+        guard let engineStart = text.range(of: #"Engine\s*:\s*struct\.begin"#, options: .regularExpression) else { return nil }
+        guard let engineEnd = matchingStructEndStart(in: text, after: engineStart.upperBound) else { return nil }
+        let newline = text.contains("\r\n") ? "\r\n" : "\n"
+        var insertion = "      UseMultithreadedMode = \(enabled ? "True" : "False")\(newline)"
+        if engineEnd > text.startIndex && !text[text.index(before: engineEnd)].isNewline {
+            insertion = newline + insertion
+        }
         var result = text
-        result.replaceSubrange(range, with: enabled ? "True" : "False")
+        result.insert(contentsOf: insertion, at: engineEnd)
         return result
+    }
+
+    private static func matchingStructEndStart(in text: String, after start: String.Index) -> String.Index? {
+        var depth = 1
+        var cursor = start
+        let tokenPattern = #"\bstruct\.(begin|end)\b"#
+        while cursor < text.endIndex,
+              let match = text.range(of: tokenPattern, options: .regularExpression, range: cursor..<text.endIndex) {
+            let token = text[match]
+            if token.hasSuffix("begin") {
+                depth += 1
+            } else {
+                depth -= 1
+                if depth == 0 {
+                    var lineStart = match.lowerBound
+                    while lineStart > start {
+                        let prev = text.index(before: lineStart)
+                        if text[prev].isNewline { break }
+                        lineStart = prev
+                    }
+                    return lineStart
+                }
+            }
+            cursor = match.upperBound
+        }
+        return nil
     }
 
     private static func multithreadedValueRange(in text: String) -> (Range<String.Index>, Bool)? {

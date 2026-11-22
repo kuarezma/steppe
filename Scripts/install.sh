@@ -24,7 +24,7 @@ DMG="$TMP/$(basename "$DMG_URL")"
 echo "Downloading $(basename "$DMG_URL")…"
 curl -fL --progress-bar "$DMG_URL" -o "$DMG"
 curl -fsSL "$SUMS_URL" -o "$TMP/SHA256SUMS.txt"
-EXPECTED="$(grep " $(basename "$DMG")\$" "$TMP/SHA256SUMS.txt" | awk '{print $1}')"
+EXPECTED="$(awk -v f="$(basename "$DMG")" '$2 == f {print $1; exit}' "$TMP/SHA256SUMS.txt")"
 ACTUAL="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$ACTUAL" ] || { echo "Checksum mismatch. Aborting."; exit 1; }
 

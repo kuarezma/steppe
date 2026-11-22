@@ -73,6 +73,7 @@ public final class SteppeController: ObservableObject {
     private let nativeDir: URL?
     private let runtime: any SteppeRuntime
     private let pollIntervalNanoseconds: UInt64
+    private let steamLaunchExitGraceNanoseconds: UInt64
     private let configureGlobalLogger: Bool
     private var setupTask: Task<Void, Never>?
     private var playTask: Task<Void, Never>?
@@ -96,6 +97,7 @@ public final class SteppeController: ObservableObject {
         manifest: RuntimeManifest = .current,
         runtime: any SteppeRuntime = LiveSteppeRuntime(),
         pollIntervalNanoseconds: UInt64 = 2_000_000_000,
+        steamLaunchExitGraceNanoseconds: UInt64 = 30_000_000_000,
         configureGlobalLogger: Bool = true
     ) {
         self.defaults = defaults
@@ -104,12 +106,14 @@ public final class SteppeController: ObservableObject {
         self.manifest = manifest
         self.runtime = runtime
         self.pollIntervalNanoseconds = pollIntervalNanoseconds
+        self.steamLaunchExitGraceNanoseconds = steamLaunchExitGraceNanoseconds
         self.configureGlobalLogger = configureGlobalLogger
         let root = rootOverride
             ?? defaults.string(forKey: Self.rootDefaultsKey).map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? SteppePaths.defaultRoot()
-        let paths = SteppePaths(root: root, profile: profile)
+        let paths = SteppePaths(root: root, profile: profile, engineArchiveRoot: manifest.engineArchiveRoot)
         self.paths = paths
+        self.requiredFreeBytesNow = profile.requiredFreeBytesInitial
         self.systemInfo = SystemInfo.detect()
         self.microphoneStatus = runtime.microphoneStatus()
         if configureGlobalLogger {
@@ -160,8 +164,9 @@ public final class SteppeController: ObservableObject {
         let status = await runtime.diskStatus(at: root)
         guard gen == operationGeneration else { return }
         applyDiskStatus(status)
-        requiredFreeBytesNow = FileManager.default.fileExists(atPath: paths.engineMarker.path)
-            ? Self.requiredFreeBytesAfterEngine : Self.requiredFreeBytes
+        let engineReady = await engineIsReady()
+        guard gen == operationGeneration else { return }
+        requiredFreeBytesNow = engineReady ? paths.profile.requiredFreeBytesAfterEngine : paths.profile.requiredFreeBytesInitial
         hasCheckedDisk = true
 
         await reloadPatchReport()
@@ -235,7 +240,7 @@ public final class SteppeController: ObservableObject {
 
     private func isEverythingReady() async -> Bool {
         guard await engineIsReady(), frameworksAreReady(), PrefixBuilder.isHealthy(paths: paths),
-              !PrefixBuilder.needsUpdate(paths: paths), steam.isClientInstalled, steam.isGameInstalled else { return false }
+              !PrefixBuilder.needsUpdate(paths: paths, manifest: manifest), steam.isClientInstalled, steam.isGameInstalled else { return false }
         return true
     }
 
@@ -261,7 +266,8 @@ public final class SteppeController: ObservableObject {
         operationGeneration &+= 1
         let root = url.lastPathComponent == "Steppe" ? url : url.appendingPathComponent("Steppe", isDirectory: true)
         defaults.set(root.path, forKey: Self.rootDefaultsKey)
-        paths = SteppePaths(root: root, profile: paths.profile)
+        paths = SteppePaths(root: root, profile: paths.profile, engineArchiveRoot: manifest.engineArchiveRoot)
+        requiredFreeBytesNow = paths.profile.requiredFreeBytesInitial
         displayModes = nil
         cachedPatchReport = .empty
         settingsLoaded = false
@@ -340,6 +346,11 @@ public final class SteppeController: ObservableObject {
                 if case .failed(let message) = phase { failCurrentStage(message) }
                 return
             }
+            let alreadyInstalled = forcePrefixRepair ? false : (await engineIsReady())
+            let needed = alreadyInstalled ? paths.profile.requiredFreeBytesAfterEngine : paths.profile.requiredFreeBytesInitial
+            if !steam.isGameInstalled && freeBytes < needed {
+                throw SetupError.notEnoughSpace(needed: needed, available: freeBytes)
+            }
             if forcePrefixRepair {
                 if let gameDir = steam.gameDirectory { _ = GameFiles.restoreOriginals(in: gameDir) }
                 try? FileManager.default.removeItem(at: paths.engineMarker)
@@ -391,8 +402,13 @@ public final class SteppeController: ObservableObject {
         if case .externalVolumeUnmounted(let volumeName) = status {
             throw SetupError.externalDriveNotConnected(volumeName)
         }
-        let alreadyInstalled = await engineIsReady()
-        let needed = alreadyInstalled ? Self.requiredFreeBytesAfterEngine : Self.requiredFreeBytes
+        let alreadyInstalled: Bool
+        if forcePrefixRepair {
+            alreadyInstalled = false
+        } else {
+            alreadyInstalled = await engineIsReady()
+        }
+        let needed = alreadyInstalled ? paths.profile.requiredFreeBytesAfterEngine : paths.profile.requiredFreeBytesInitial
         if !steam.isGameInstalled && freeBytes < needed {
             throw SetupError.notEnoughSpace(needed: needed, available: freeBytes)
         }
@@ -496,7 +512,7 @@ public final class SteppeController: ObservableObject {
         let shouldForceRepair = forcePrefixRepair
         forcePrefixRepair = false
         if PrefixBuilder.isHealthy(paths: paths) {
-            if shouldForceRepair || PrefixBuilder.needsUpdate(paths: paths) {
+            if shouldForceRepair || PrefixBuilder.needsUpdate(paths: paths, manifest: manifest) {
                 set(.prefix, .running(progress: nil, detail: L("Updating the Windows environment")))
                 try await runtime.updatePrefix(paths: paths, environment: environment.setup())
             } else {
@@ -514,10 +530,20 @@ public final class SteppeController: ObservableObject {
 
     private func ensureSteamClient() async throws {
         if steam.isClientInstalled { set(.steamClient, .done); return }
+        speedSample = nil
+        downloadSpeed = 0
+        defer {
+            downloadSpeed = 0
+            speedSample = nil
+        }
         set(.steamClient, .running(progress: 0, detail: L("Downloading Steam")))
         let env = environment.setup()
         let report: @Sendable (DownloadProgress) -> Void = { [weak self] p in
-            Task { @MainActor in self?.set(.steamClient, .running(progress: p.fraction * 0.5, detail: L("Downloading Steam"))) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateSpeed(bytes: p.received)
+                self.set(.steamClient, .running(progress: p.fraction * 0.5, detail: L("Downloading Steam")))
+            }
         }
         try await runtime.installSteamClient(paths: paths, manifest: manifest, environment: env, progress: report)
         PrefixBuilder.isolatePrefixQuietly(paths.prefixDir)
@@ -601,12 +627,17 @@ public final class SteppeController: ObservableObject {
                 }
             } else if kit.hasSignedIn {
                 set(.signIn, .done)
-                if installRequestedAt == nil || Date().timeIntervalSince(installRequestedAt!) > 90 {
-                    try runtime.requestGameInstall(paths: paths, manifest: manifest, environment: env)
-                    installRequestedAt = Date()
+                if !steamUp {
+                    activePrompt = .steamClosedReopen
+                    set(.game, .waitingForUser(L("Steam is not running — open it to continue")))
+                } else {
+                    if installRequestedAt == nil || Date().timeIntervalSince(installRequestedAt!) > 90 {
+                        try runtime.requestGameInstall(paths: paths, manifest: manifest, environment: env)
+                        installRequestedAt = Date()
+                    }
+                    activePrompt = .installGame
+                    set(.game, .waitingForUser(L("Click Install in the Steam window")))
                 }
-                activePrompt = .installGame
-                set(.game, .waitingForUser(L("Click Install in the Steam window")))
             } else {
                 if !announcedSignIn {
                     announcedSignIn = true
@@ -631,6 +662,11 @@ public final class SteppeController: ObservableObject {
 
     private func download(_ item: RuntimeManifest.Download, to destination: URL, stage: SetupStage, label: String, share: Double) async throws {
         speedSample = nil
+        downloadSpeed = 0
+        defer {
+            downloadSpeed = 0
+            speedSample = nil
+        }
         set(stage, .running(progress: 0, detail: label))
         try await runtime.download(item, to: destination) { [weak self] p in
             Task { @MainActor in
@@ -646,6 +682,11 @@ public final class SteppeController: ObservableObject {
     private func updateSpeed(bytes: Int64) {
         let now = Date()
         if let sample = speedSample {
+            if bytes < sample.bytes {
+                speedSample = (now, bytes)
+                downloadSpeed = 0
+                return
+            }
             let dt = now.timeIntervalSince(sample.time)
             if dt >= 1 {
                 downloadSpeed = Double(bytes - sample.bytes) / dt
@@ -729,6 +770,7 @@ public final class SteppeController: ObservableObject {
             var updateElapsedNanoseconds: UInt64 = 0
             var lastDownloadedBytes: Int64 = -1
             var updateStallNanoseconds: UInt64 = 0
+            var noProcessStreak = 0
             let stepNs = max(pollIntervalNanoseconds, 1)
             let timeoutNs: UInt64 = 600 * 1_000_000_000
             let updateTimeoutNs: UInt64 = 3600 * 1_000_000_000
@@ -744,6 +786,7 @@ public final class SteppeController: ObservableObject {
                     break
                 }
                 if let info = steam.appManifest, info.isUpdating {
+                    noProcessStreak = 0
                     updateElapsedNanoseconds &+= stepNs
                     if updateElapsedNanoseconds > updateTimeoutNs { throw SetupError.gameDidNotStart }
                     if info.bytesDownloaded != lastDownloadedBytes {
@@ -760,6 +803,14 @@ public final class SteppeController: ObservableObject {
                 } else {
                     elapsedNanoseconds &+= stepNs
                     if elapsedNanoseconds > timeoutNs { throw SetupError.gameDidNotStart }
+                    if elapsedNanoseconds >= steamLaunchExitGraceNanoseconds {
+                        if !(await runtime.isAnyProcessRunning(inEngine: paths.wineBundle)) {
+                            noProcessStreak += 1
+                            if noProcessStreak >= 2 { throw SetupError.gameDidNotStart }
+                        } else {
+                            noProcessStreak = 0
+                        }
+                    }
                     if elapsedNanoseconds > 30 * 1_000_000_000 {
                         phase = .playing(L("Waiting for Steam — sign in there if it asks"))
                     } else if elapsedNanoseconds > 8 * 1_000_000_000 {
@@ -822,9 +873,18 @@ public final class SteppeController: ObservableObject {
                 self.playTask = nil
                 self.releaseLockIfIdle()
             }
-            try? await self.waitUntilGameExits(executableName: execName)
-            guard !Task.isCancelled else { return }
-            await self.finishSession(resolution: self.plannedResolution)
+            do {
+                try await self.waitUntilGameExits(executableName: execName)
+                await self.finishSession(resolution: self.plannedResolution)
+            } catch is CancellationError {
+                self.lastSessionNote = nil
+                await self.reloadPatchReport()
+                self.phase = .ready
+            } catch {
+                self.lastSessionNote = error.localizedDescription
+                await self.reloadPatchReport()
+                self.phase = .ready
+            }
         }
     }
 
@@ -858,16 +918,40 @@ public final class SteppeController: ObservableObject {
     }
 
     private func pruneFrameTimes() {
+        Self.pruneFrameTimes(in: paths.logsDir, maxTotalBytes: Self.maxFrameTimesArchiveBytes, maxKeepFiles: 5)
+    }
+
+    static func pruneFrameTimes(in logsDir: URL, maxTotalBytes: Int64 = maxFrameTimesArchiveBytes, maxKeepFiles: Int = 5) {
         let fm = FileManager.default
-        let current = paths.logsDir.appendingPathComponent("frames.ns")
-        let previous = paths.logsDir.appendingPathComponent("frames.ns.1")
-        if fm.fileExists(atPath: current.path) {
-            try? fm.removeItem(at: previous)
-            try? fm.moveItem(at: current, to: previous)
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]
+        guard let urls = try? fm.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles]) else { return }
+        struct Entry {
+            let url: URL
+            let modified: Date
+            let size: Int64
         }
-        if let size = (try? fm.attributesOfItem(atPath: previous.path)[.size] as? Int64),
-           size > Self.maxFrameTimesArchiveBytes {
-            try? fm.removeItem(at: previous)
+        var entries: [Entry] = []
+        for url in urls {
+            let name = url.lastPathComponent
+            guard name == "frames.ns" || name.hasPrefix("frames.ns.") else { continue }
+            guard let values = try? url.resourceValues(forKeys: keys), values.isRegularFile == true else { continue }
+            let modified = values.contentModificationDate ?? .distantPast
+            let size = Int64(values.fileSize ?? 0)
+            entries.append(Entry(url: url, modified: modified, size: size))
+        }
+        entries.sort {
+            if $0.modified != $1.modified { return $0.modified > $1.modified }
+            return $0.url.lastPathComponent > $1.url.lastPathComponent
+        }
+        var kept = 0
+        var totalBytes: Int64 = 0
+        for entry in entries {
+            if kept < maxKeepFiles && (totalBytes + entry.size) <= maxTotalBytes {
+                kept += 1
+                totalBytes += entry.size
+            } else {
+                try? fm.removeItem(at: entry.url)
+            }
         }
     }
 
@@ -930,7 +1014,7 @@ public final class SteppeController: ObservableObject {
             try runtime.launchDialogHelper(
                 paths: paths,
                 arguments: [SteppePaths.dialogHelperWindowsPath, "600"],
-                environment: environment.game(settings: settings),
+                environment: environment.tool(),
                 logName: "dialog-helper.log"
             )
         } catch {
@@ -944,7 +1028,7 @@ public final class SteppeController: ObservableObject {
             Log.shared.warn("list-modes.exe missing; the resolution is not checked against Windows display modes")
             return nil
         }
-        return await runtime.probeDisplayModes(paths: paths, environment: environment.game(settings: settings))
+        return await runtime.probeDisplayModes(paths: paths, environment: environment.tool())
     }
 
     /// Copies a helper program from the app bundle into the prefix's tools folder. False if it is not bundled or cannot be copied.
@@ -971,10 +1055,17 @@ public final class SteppeController: ObservableObject {
 
     /// Force-closes the game, Steam and every Wine process of the prefix.
     public func forceStop() {
-        playTask?.cancel()
-        Task {
-            await runtime.killAllWine(paths: paths, environment: environment.setup())
-            await refresh()
+        guard !isMaintaining else { return }
+        let activePlay = playTask
+        activePlay?.cancel()
+        Task { [weak self] in
+            guard let self else { return }
+            self.isMaintaining = true
+            await self.runtime.killAllWine(paths: self.paths, environment: self.environment.setup())
+            await activePlay?.value
+            self.isMaintaining = false
+            self.releaseLockIfIdle()
+            await self.refresh(allowAutoSetup: false)
         }
     }
 
@@ -990,6 +1081,7 @@ public final class SteppeController: ObservableObject {
             if !hadLock { releaseLockIfIdle() }
         }
         let count = GameFiles.restoreOriginals(in: gameDir)
+        try? FileManager.default.removeItem(at: paths.patchLogFile)
         cachedPatchReport = .empty
         Task { await reloadPatchReport() }
         return count
@@ -1023,7 +1115,7 @@ public final class SteppeController: ObservableObject {
         }
         await runtime.killAllWine(paths: paths, environment: environment.setup())
         if configureGlobalLogger {
-            Log.shared.configure(fileURL: nil)
+            Log.shared.detachAndFlush()
         }
 
         let uninstallPaths = paths
@@ -1033,7 +1125,7 @@ public final class SteppeController: ObservableObject {
             uninstallPaths.downloadsDir,
             uninstallPaths.logsDir,
             uninstallPaths.root.appendingPathComponent("prefixes", isDirectory: true),
-            uninstallPaths.stateFile,
+            uninstallPaths.root.appendingPathComponent("state.json"),
             uninstallPaths.settingsFile,
             uninstallPaths.rootMarker,
             uninstallPaths.root.appendingPathComponent("engine.tmp", isDirectory: true),
@@ -1055,7 +1147,8 @@ public final class SteppeController: ObservableObject {
         }
 
         defaults.removeObject(forKey: Self.rootDefaultsKey)
-        paths = SteppePaths(root: rootOverride ?? SteppePaths.defaultRoot(), profile: paths.profile)
+        paths = SteppePaths(root: rootOverride ?? SteppePaths.defaultRoot(), profile: paths.profile, engineArchiveRoot: manifest.engineArchiveRoot)
+        requiredFreeBytesNow = paths.profile.requiredFreeBytesInitial
         displayModes = nil
         cachedPatchReport = .empty
         lastSessionNote = nil
@@ -1072,8 +1165,8 @@ public final class SteppeController: ObservableObject {
         await refresh(allowAutoSetup: false)
     }
 
-    public func exportDiagnostics() throws -> URL {
-        try Diagnostics.export(controller: self)
+    public func exportDiagnostics() async throws -> URL {
+        try await Diagnostics.export(controller: self)
     }
 
     // MARK: - Settings persistence
@@ -1099,6 +1192,7 @@ public final class SteppeController: ObservableObject {
             freeBytes: freeBytes,
             gameManifest: steam.appManifest,
             paths: paths,
+            manifest: manifest,
             leaks: PrefixBuilder.escapesPrefix(prefix: paths.prefixDir)
         )
     }

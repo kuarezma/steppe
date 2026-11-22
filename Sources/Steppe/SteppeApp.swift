@@ -31,7 +31,7 @@ struct SteppeApp: App {
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck)
+                Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck || controller.isBusy)
             }
             CommandGroup(replacing: .help) {
                 Link("Steppe on GitHub", destination: URL(string: "https://github.com/kuarezma/steppe")!)

@@ -25,10 +25,10 @@ if [ -z "${BUILD:-}" ]; then
         PRERELEASE="${VERSION#*-}"
         NUM_PART="$(printf '%s' "$PRERELEASE" | grep -oE '[0-9]+' | head -n1 || true)"
         NUM_VAL=$(( 10#${NUM_PART:-0} ))
-        [ "$NUM_VAL" -gt 199 ] && NUM_VAL=199
+        [ "$NUM_VAL" -gt 99 ] && NUM_VAL=99
         case "$PRERELEASE" in
-            alpha*) PRERELEASE_OFFSET=$(( NUM_VAL )) ;;
-            beta*)  PRERELEASE_OFFSET=$(( 200 + NUM_VAL )) ;;
+            alpha*) PRERELEASE_OFFSET=$(( 200 + NUM_VAL )) ;;
+            beta*)  PRERELEASE_OFFSET=$(( 300 + NUM_VAL )) ;;
             rc*)    PRERELEASE_OFFSET=$(( 500 + NUM_VAL )) ;;
             *)      PRERELEASE_OFFSET=$(( 100 + NUM_VAL )) ;;
         esac

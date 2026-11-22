@@ -2,6 +2,26 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.13]
+
+### Fixed & Hardened
+- **Process draining & Wine discovery (`ProcessKit`, `WinePatcher`)**:
+  - Added bounded `outputDrainGrace` (`Accumulator` with `seal()` / `markEOF()`) in `ProcessRunner.run` so descendants such as `wineserver` keeping output pipes open cannot stall timeouts/cancellations or retain buffers.
+  - Propagated `CancellationError` in `WinePatcher.sign` and matched canonical `realpath` paths under `/private` in `ProcessScanner.processesChecked`.
+- **Lifecycle, Force Quit & uninstall safety (`SteppeController`)**:
+  - Detached `shutDownSteam()` and `stopPrefix()` for cancelled and failed tasks so Steam/Wine cleanup finishes cleanly instead of aborting under caller cancellation.
+  - Added `stopTask` (`isStopping` / `isBusy`) tracking for *Force Quit* to block concurrent launches and make `uninstall()` wait before touching disk, plus `openSteamTask`/`openSteamGeneration` gating so cancelling setup cannot launch Steam afterwards.
+  - Guarded `loadSettingsIfNeeded()` with `!settingsLoaded`, preserved `.steppe.lock` if owned target deletion fails, and removed empty install roots atomically with `Darwin.rmdir`.
+- **Data, downloads & native shims (`AppSettings`, `Diagnostics`, `ProfileTuner`, `Downloader`, `glfix`, `vorbis-fast`)**:
+  - Switched `AppSettings.init(from:)` to independent per-field fallback decoding, capped `Diagnostics` log ingestion via tail-only `logTail` (`262 KiB`), skipped unreadable or unwritable `profile.cfg` profiles in `ProfileTuner.apply`, and discarded unpinned (`.part`/`.meta`) downloads across fresh starts and retries.
+  - Added full pixel-store save/neutralize/restore (`tight_store_begin` / `tight_store_end` covering PBO bindings, alignment, row length, and skips) in `Native/glfix/pbemu.c` and `--retry 5 --retry-all-errors` in `Native/vorbis-fast/fetch-sources.sh`.
+
+### Improvements & Verification
+- **`GameProfile` isolation (`GameProfile`, `Paths`, `PrefixBuilder`, `WineEnvironment`)**:
+  - Added `Integration` (`.cossacks3` / `.none`), `profilesSubpath`, optional `documentsSubpath`, `GameProfile.validated(...)` identity/path safety checks, multi-user `drive_c/users/*` save detection, and `.cossacks3`-gated injection in `WineEnvironment.game(settings:)`.
+- **Hardware GL & privacy gates (`test_runner.py`, `verify-mac.sh`, `build-app.sh`, `ci.yml`, `docs/ACCEPTANCE.md`, `CONTRIBUTING.md`)**:
+  - Added `STEPPE_REQUIRE_GL=1` failure enforcement when hardware OpenGL is unavailable, `Scripts/verify-mac.sh`, `docs/ACCEPTANCE.md`, binary-aware `grep -rla` privacy scanning across `dist/Steppe.app`, and expanded Swift/native coverage (`127` XCTest cases).
+
 ## [0.1.12]
 
 ### Fixed & Hardened

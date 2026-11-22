@@ -1254,4 +1254,401 @@ final class AuditFixesTests: XCTestCase {
             XCTFail("Expected CancellationError, got \(error)")
         }
     }
+
+    // MARK: - PR #3/#4 integrated lifecycle & edge-case tests
+
+    @MainActor
+    func testForceStopTracksStoppingStateBlocksPlayAndUninstallWaits() async throws {
+        final class StopRaceState: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _killEntered = false
+            private var _allowKillFinish = false
+            private var _launchCount = 0
+            private var _killCount = 0
+            private var _running = true
+
+            func isRunning() -> Bool { lock.lock(); defer { lock.unlock() }; return _running }
+            func markKillEntered() { lock.lock(); _killEntered = true; _killCount += 1; lock.unlock() }
+            func isKillEntered() -> Bool { lock.lock(); defer { lock.unlock() }; return _killEntered }
+            func allowKillFinish() { lock.lock(); _allowKillFinish = true; _running = false; lock.unlock() }
+            func canKillFinish() -> Bool { lock.lock(); defer { lock.unlock() }; return _allowKillFinish }
+            func noteLaunch() { lock.lock(); _launchCount += 1; lock.unlock() }
+            var launches: Int { lock.lock(); defer { lock.unlock() }; return _launchCount }
+            var kills: Int { lock.lock(); defer { lock.unlock() }; return _killCount }
+        }
+
+        struct StopRaceRuntime: SteppeRuntime {
+            let state: StopRaceState
+            func primaryDisplay() -> DisplayInfo {
+                DisplayInfo(size: Resolution(width: 2560, height: 1600), scale: 2.0, maxRefreshRate: 60, name: "MockDisplay", hasNotch: false)
+            }
+            func diskStatus(at root: URL) async -> SystemInfo.DiskStatus { .available(50_000_000_000) }
+            func acquireLock(root: URL) -> Result<InstallLock, LockFailure> { InstallLock.acquire(root: root) }
+            func isRosettaInstalled() async -> Bool { true }
+            func runProcess(_ executable: URL, arguments: [String], timeout: TimeInterval?) async -> CommandResult? { nil }
+            func checkGameRunning(inEngine bundle: URL, executableName: String) async -> GameRunningCheck {
+                state.isRunning() ? .running : .notRunning
+            }
+            func isClientRunning(inEngine bundle: URL) async -> Bool { false }
+            func isAnyProcessRunning(inEngine bundle: URL) async -> Bool { state.isRunning() }
+            func shutdownSteam(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) async {}
+            func killAllWine(paths: SteppePaths, environment: [String: String]) async {
+                state.markKillEntered()
+                while !state.canKillFinish() {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+            }
+            func launchSteamClient(paths: SteppePaths, manifest: RuntimeManifest, arguments: [String], environment: [String: String], logName: String) throws {
+                state.noteLaunch()
+            }
+            func requestGameInstall(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) throws {}
+            func launchDialogHelper(paths: SteppePaths, arguments: [String], environment: [String: String], logName: String) throws {}
+            func probeDisplayModes(paths: SteppePaths, environment: [String: String]) async -> DisplayModes? { nil }
+            func download(_ item: RuntimeManifest.Download, to destination: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func extractArchive(_ archive: URL, to destination: URL, members: [String]?) async throws {}
+            func patchEngine(bundle: URL, patch: RuntimeManifest.WinemacPatch) async throws {}
+            func isEnginePatched(bundle: URL, patch: RuntimeManifest.WinemacPatch) async -> Bool { true }
+            func createPrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func updatePrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func isolatePrefix(_ prefix: URL) throws {}
+            func installSteamClient(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String], progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func ensureAudioEntitlements(engineRoot: URL) async {}
+            func microphoneStatus() -> MicrophoneStatus { .notDetermined }
+            @MainActor func ensureMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+            @MainActor func resetAndRequestMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+        }
+
+        let paths = SteppePaths(root: root)
+        try seedReadyPrefix(at: paths)
+        let state = StopRaceState()
+        let ctrl = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: root,
+            runtime: StopRaceRuntime(state: state),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+
+        await ctrl.refresh(allowAutoSetup: false)
+        guard case .playing = ctrl.phase else {
+            return XCTFail("Expected attached playing phase, got \(ctrl.phase)")
+        }
+
+        ctrl.forceStop()
+        XCTAssertTrue(ctrl.isStopping)
+        XCTAssertTrue(ctrl.isBusy)
+
+        for _ in 0..<100 where !state.isKillEntered() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(state.isKillEntered())
+        // While forceStop is still stopping processes, Ready has not appeared and play()/forceStop() are blocked.
+        ctrl.forceStop()
+        ctrl.play()
+        XCTAssertEqual(state.launches, 0)
+        XCTAssertEqual(state.kills, 1)
+
+        // Start uninstall while forceStop is still running; uninstall must wait for stopTask before deleting.
+        let uninstallTask = Task { await ctrl.uninstall() }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths.engineDir.path), "uninstall must wait for forceStop before deleting")
+
+        state.allowKillFinish()
+        await uninstallTask.value
+        XCTAssertFalse(ctrl.isStopping)
+        XCTAssertFalse(ctrl.isBusy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: paths.engineDir.path))
+    }
+
+    @MainActor
+    func testCancelledSetupDetachesSteamShutdownAndFailedSetupStopsPrefix() async throws {
+        final class SetupCleanupState: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _shutdownObservedCancellation = false
+            private var _shutdownCount = 0
+            private var _killCount = 0
+            private var _failCreatePrefix = false
+
+            var failCreatePrefix: Bool {
+                get { lock.lock(); defer { lock.unlock() }; return _failCreatePrefix }
+                set { lock.lock(); _failCreatePrefix = newValue; lock.unlock() }
+            }
+
+            func recordShutdown(cancelled: Bool) {
+                lock.lock()
+                _shutdownObservedCancellation = cancelled
+                _shutdownCount += 1
+                lock.unlock()
+            }
+
+            func recordKill() {
+                lock.lock()
+                _killCount += 1
+                lock.unlock()
+            }
+
+            var shutdownObservedCancellation: Bool { lock.lock(); defer { lock.unlock() }; return _shutdownObservedCancellation }
+            var shutdownCount: Int { lock.lock(); defer { lock.unlock() }; return _shutdownCount }
+            var killCount: Int { lock.lock(); defer { lock.unlock() }; return _killCount }
+        }
+
+        struct SetupCleanupRuntime: SteppeRuntime {
+            let state: SetupCleanupState
+            func primaryDisplay() -> DisplayInfo {
+                DisplayInfo(size: Resolution(width: 2560, height: 1600), scale: 2.0, maxRefreshRate: 60, name: "MockDisplay", hasNotch: false)
+            }
+            func diskStatus(at root: URL) async -> SystemInfo.DiskStatus { .available(50_000_000_000) }
+            func acquireLock(root: URL) -> Result<InstallLock, LockFailure> { InstallLock.acquire(root: root) }
+            func isRosettaInstalled() async -> Bool { false }
+            func runProcess(_ executable: URL, arguments: [String], timeout: TimeInterval?) async -> CommandResult? { nil }
+            func checkGameRunning(inEngine bundle: URL, executableName: String) async -> GameRunningCheck { .notRunning }
+            func isClientRunning(inEngine bundle: URL) async -> Bool { false }
+            func isAnyProcessRunning(inEngine bundle: URL) async -> Bool { false }
+            func shutdownSteam(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) async {
+                state.recordShutdown(cancelled: Task.isCancelled)
+            }
+            func killAllWine(paths: SteppePaths, environment: [String: String]) async {
+                state.recordKill()
+            }
+            func launchSteamClient(paths: SteppePaths, manifest: RuntimeManifest, arguments: [String], environment: [String: String], logName: String) throws {}
+            func requestGameInstall(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) throws {}
+            func launchDialogHelper(paths: SteppePaths, arguments: [String], environment: [String: String], logName: String) throws {}
+            func probeDisplayModes(paths: SteppePaths, environment: [String: String]) async -> DisplayModes? { nil }
+            func download(_ item: RuntimeManifest.Download, to destination: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func extractArchive(_ archive: URL, to destination: URL, members: [String]?) async throws {}
+            func patchEngine(bundle: URL, patch: RuntimeManifest.WinemacPatch) async throws {}
+            func isEnginePatched(bundle: URL, patch: RuntimeManifest.WinemacPatch) async -> Bool { false }
+            func createPrefix(paths: SteppePaths, environment: [String: String]) async throws {
+                if state.failCreatePrefix { throw SetupError.engineLayout }
+            }
+            func updatePrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func isolatePrefix(_ prefix: URL) throws {}
+            func installSteamClient(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String], progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func ensureAudioEntitlements(engineRoot: URL) async {}
+            func microphoneStatus() -> MicrophoneStatus { .notDetermined }
+            @MainActor func ensureMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+            @MainActor func resetAndRequestMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+        }
+
+        // Case 1: Cancelled setup shuts down Steam in a detached task so Task.isCancelled is false.
+        let state1 = SetupCleanupState()
+        let ctrl1 = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: root,
+            runtime: SetupCleanupRuntime(state: state1),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+        ctrl1.startSetup()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        ctrl1.cancelSetup()
+        for _ in 0..<100 where ctrl1.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(state1.shutdownCount, 1)
+        XCTAssertFalse(state1.shutdownObservedCancellation)
+        XCTAssertEqual(ctrl1.phase, .needsSetup)
+
+        // Case 2: External drive error fails setup and triggers stopPrefix() so leftover processes do not linger.
+        struct FailingDiskRuntime: SteppeRuntime {
+            let state: SetupCleanupState
+            func primaryDisplay() -> DisplayInfo {
+                DisplayInfo(size: Resolution(width: 2560, height: 1600), scale: 2.0, maxRefreshRate: 60, name: "MockDisplay", hasNotch: false)
+            }
+            func diskStatus(at root: URL) async -> SystemInfo.DiskStatus { .externalVolumeUnmounted("OfflineDisk") }
+            func acquireLock(root: URL) -> Result<InstallLock, LockFailure> { InstallLock.acquire(root: root) }
+            func isRosettaInstalled() async -> Bool { true }
+            func runProcess(_ executable: URL, arguments: [String], timeout: TimeInterval?) async -> CommandResult? { nil }
+            func checkGameRunning(inEngine bundle: URL, executableName: String) async -> GameRunningCheck { .notRunning }
+            func isClientRunning(inEngine bundle: URL) async -> Bool { false }
+            func isAnyProcessRunning(inEngine bundle: URL) async -> Bool { false }
+            func shutdownSteam(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) async {}
+            func killAllWine(paths: SteppePaths, environment: [String: String]) async { state.recordKill() }
+            func launchSteamClient(paths: SteppePaths, manifest: RuntimeManifest, arguments: [String], environment: [String: String], logName: String) throws {}
+            func requestGameInstall(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) throws {}
+            func launchDialogHelper(paths: SteppePaths, arguments: [String], environment: [String: String], logName: String) throws {}
+            func probeDisplayModes(paths: SteppePaths, environment: [String: String]) async -> DisplayModes? { nil }
+            func download(_ item: RuntimeManifest.Download, to destination: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func extractArchive(_ archive: URL, to destination: URL, members: [String]?) async throws {}
+            func patchEngine(bundle: URL, patch: RuntimeManifest.WinemacPatch) async throws {}
+            func isEnginePatched(bundle: URL, patch: RuntimeManifest.WinemacPatch) async -> Bool { false }
+            func createPrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func updatePrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func isolatePrefix(_ prefix: URL) throws {}
+            func installSteamClient(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String], progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func ensureAudioEntitlements(engineRoot: URL) async {}
+            func microphoneStatus() -> MicrophoneStatus { .notDetermined }
+            @MainActor func ensureMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+            @MainActor func resetAndRequestMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+        }
+        let failState = SetupCleanupState()
+        let ctrl3 = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: root,
+            runtime: FailingDiskRuntime(state: failState),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+        ctrl3.startSetup()
+        for _ in 0..<100 where ctrl3.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(failState.killCount, 1)
+    }
+
+    @MainActor
+    func testOpenSteamDoesNotLaunchAfterSetupCancelled() async throws {
+        final class OpenSteamRaceState: @unchecked Sendable {
+            private let lock = NSLock()
+            private var _allowEntFinish = false
+            private var _entEntered = false
+            private var _launches = 0
+
+            func markEntEntered() { lock.lock(); _entEntered = true; lock.unlock() }
+            func isEntEntered() -> Bool { lock.lock(); defer { lock.unlock() }; return _entEntered }
+            func allowEntFinish() { lock.lock(); _allowEntFinish = true; lock.unlock() }
+            func canEntFinish() -> Bool { lock.lock(); defer { lock.unlock() }; return _allowEntFinish }
+            func recordLaunch() { lock.lock(); _launches += 1; lock.unlock() }
+            var launches: Int { lock.lock(); defer { lock.unlock() }; return _launches }
+        }
+
+        struct OpenSteamRaceRuntime: SteppeRuntime {
+            let state: OpenSteamRaceState
+            func primaryDisplay() -> DisplayInfo {
+                DisplayInfo(size: Resolution(width: 2560, height: 1600), scale: 2.0, maxRefreshRate: 60, name: "MockDisplay", hasNotch: false)
+            }
+            func diskStatus(at root: URL) async -> SystemInfo.DiskStatus { .available(50_000_000_000) }
+            func acquireLock(root: URL) -> Result<InstallLock, LockFailure> { InstallLock.acquire(root: root) }
+            func isRosettaInstalled() async -> Bool { false }
+            func runProcess(_ executable: URL, arguments: [String], timeout: TimeInterval?) async -> CommandResult? { nil }
+            func checkGameRunning(inEngine bundle: URL, executableName: String) async -> GameRunningCheck { .notRunning }
+            func isClientRunning(inEngine bundle: URL) async -> Bool { false }
+            func isAnyProcessRunning(inEngine bundle: URL) async -> Bool { false }
+            func shutdownSteam(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) async {}
+            func killAllWine(paths: SteppePaths, environment: [String: String]) async {}
+            func launchSteamClient(paths: SteppePaths, manifest: RuntimeManifest, arguments: [String], environment: [String: String], logName: String) throws {
+                state.recordLaunch()
+            }
+            func requestGameInstall(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) throws {}
+            func launchDialogHelper(paths: SteppePaths, arguments: [String], environment: [String: String], logName: String) throws {}
+            func probeDisplayModes(paths: SteppePaths, environment: [String: String]) async -> DisplayModes? { nil }
+            func download(_ item: RuntimeManifest.Download, to destination: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func extractArchive(_ archive: URL, to destination: URL, members: [String]?) async throws {}
+            func patchEngine(bundle: URL, patch: RuntimeManifest.WinemacPatch) async throws {}
+            func isEnginePatched(bundle: URL, patch: RuntimeManifest.WinemacPatch) async -> Bool { false }
+            func createPrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func updatePrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func isolatePrefix(_ prefix: URL) throws {}
+            func installSteamClient(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String], progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func ensureAudioEntitlements(engineRoot: URL) async {
+                state.markEntEntered()
+                while !state.canEntFinish() && !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+            }
+            func microphoneStatus() -> MicrophoneStatus { .notDetermined }
+            @MainActor func ensureMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+            @MainActor func resetAndRequestMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+        }
+
+        let state = OpenSteamRaceState()
+        let ctrl = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: root,
+            runtime: OpenSteamRaceRuntime(state: state),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+        ctrl.startSetup()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(ctrl.phase, .settingUp)
+
+        ctrl.openSteam()
+        for _ in 0..<100 where !state.isEntEntered() {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(state.isEntEntered())
+
+        ctrl.cancelSetup()
+        state.allowEntFinish()
+        for _ in 0..<100 where ctrl.isBusy {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        try await Task.sleep(nanoseconds: 40_000_000)
+        XCTAssertEqual(state.launches, 0, "openSteam must never launch Steam after setup was cancelled")
+    }
+
+    @MainActor
+    func testUninstallPreservesLockIfTargetDeletionFailsAndRemovesEmptyRootAtomically() async throws {
+        struct IdleRuntime: SteppeRuntime {
+            func primaryDisplay() -> DisplayInfo {
+                DisplayInfo(size: Resolution(width: 2560, height: 1600), scale: 2.0, maxRefreshRate: 60, name: "MockDisplay", hasNotch: false)
+            }
+            func diskStatus(at root: URL) async -> SystemInfo.DiskStatus { .available(50_000_000_000) }
+            func acquireLock(root: URL) -> Result<InstallLock, LockFailure> { InstallLock.acquire(root: root) }
+            func isRosettaInstalled() async -> Bool { true }
+            func runProcess(_ executable: URL, arguments: [String], timeout: TimeInterval?) async -> CommandResult? { nil }
+            func checkGameRunning(inEngine bundle: URL, executableName: String) async -> GameRunningCheck { .notRunning }
+            func isClientRunning(inEngine bundle: URL) async -> Bool { false }
+            func isAnyProcessRunning(inEngine bundle: URL) async -> Bool { false }
+            func shutdownSteam(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) async {}
+            func killAllWine(paths: SteppePaths, environment: [String: String]) async {}
+            func launchSteamClient(paths: SteppePaths, manifest: RuntimeManifest, arguments: [String], environment: [String: String], logName: String) throws {}
+            func requestGameInstall(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String]) throws {}
+            func launchDialogHelper(paths: SteppePaths, arguments: [String], environment: [String: String], logName: String) throws {}
+            func probeDisplayModes(paths: SteppePaths, environment: [String: String]) async -> DisplayModes? { nil }
+            func download(_ item: RuntimeManifest.Download, to destination: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func extractArchive(_ archive: URL, to destination: URL, members: [String]?) async throws {}
+            func patchEngine(bundle: URL, patch: RuntimeManifest.WinemacPatch) async throws {}
+            func isEnginePatched(bundle: URL, patch: RuntimeManifest.WinemacPatch) async -> Bool { true }
+            func createPrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func updatePrefix(paths: SteppePaths, environment: [String: String]) async throws {}
+            func isolatePrefix(_ prefix: URL) throws {}
+            func installSteamClient(paths: SteppePaths, manifest: RuntimeManifest, environment: [String: String], progress: @escaping @Sendable (DownloadProgress) -> Void) async throws {}
+            func ensureAudioEntitlements(engineRoot: URL) async {}
+            func microphoneStatus() -> MicrophoneStatus { .notDetermined }
+            @MainActor func ensureMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+            @MainActor func resetAndRequestMicrophoneAccess(defaults: UserDefaults) async -> MicrophoneStatus { .notDetermined }
+        }
+
+        // Case 1: Empty install root (no unrelated user files) is removed cleanly including .steppe.lock.
+        let cleanRoot = root.appendingPathComponent("clean-uninstall", isDirectory: true)
+        let paths1 = SteppePaths(root: cleanRoot)
+        try paths1.ensureDirectories()
+        let ctrl1 = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: cleanRoot,
+            runtime: IdleRuntime(),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+        await ctrl1.uninstall()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cleanRoot.path))
+
+        // Case 2: Read-only engine subdirectory containing file blocks deletion while root remains lockable; .steppe.lock is kept.
+        let blockedRoot = root.appendingPathComponent("blocked-uninstall", isDirectory: true)
+        let paths2 = SteppePaths(root: blockedRoot)
+        try paths2.ensureDirectories()
+        try FileManager.default.createDirectory(at: paths2.engineDir, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: paths2.engineDir.appendingPathComponent("file.txt"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: paths2.engineDir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths2.engineDir.path) }
+
+        let ctrl2 = SteppeController(
+            nativeDir: nil,
+            defaults: defaults,
+            rootOverride: blockedRoot,
+            runtime: IdleRuntime(),
+            pollIntervalNanoseconds: 10_000_000,
+            configureGlobalLogger: false
+        )
+        await ctrl2.uninstall()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: blockedRoot.appendingPathComponent(".steppe.lock").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: paths2.engineDir.path))
+    }
 }

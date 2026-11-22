@@ -112,10 +112,15 @@ public enum PrefixBuilder {
         let commonEntries = (try? fm.contentsOfDirectory(atPath: apps.appendingPathComponent("common").path)) ?? []
         if !commonEntries.isEmpty { return true }
         if fm.fileExists(atPath: paths.appManifestURL(appID: paths.profile.steamAppID).path) { return true }
-        if let docs = paths.gameDocumentsDir,
-           let docEntries = try? fm.contentsOfDirectory(atPath: docs.path),
-           !docEntries.filter({ !$0.hasPrefix(".") }).isEmpty {
-            return true
+        if let relative = paths.profile.documentsSubpath, !relative.isEmpty {
+            let users = paths.driveC.appendingPathComponent("users", isDirectory: true)
+            for user in (try? fm.contentsOfDirectory(atPath: users.path)) ?? [] {
+                let docs = users.appendingPathComponent(user).appendingPathComponent(relative)
+                if let docEntries = try? fm.contentsOfDirectory(atPath: docs.path),
+                   !docEntries.filter({ !$0.hasPrefix(".") }).isEmpty {
+                    return true
+                }
+            }
         }
         return false
     }

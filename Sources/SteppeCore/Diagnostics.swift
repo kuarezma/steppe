@@ -101,13 +101,13 @@ enum Diagnostics {
             lines.append("Game: not installed")
         }
         lines.append("Prefix isolation leaks: \(s.leaks.isEmpty ? "none" : s.leaks.joined(separator: ", "))")
-        if let patchLog = lossyText(at: s.paths.patchLogFile), !patchLog.isEmpty {
+        if let patchLog = logTail(at: s.paths.patchLogFile), !patchLog.isEmpty {
             lines.append("Speed patches:")
             lines.append(patchLog)
         }
         for name in ["steam-setup.log", "game-session.log", "dialog-helper.log"] {
             let url = s.paths.logsDir.appendingPathComponent(name)
-            if let text = lossyText(at: url) {
+            if let text = logTail(at: url) {
                 let tail = text.split(separator: "\n", omittingEmptySubsequences: true)
                     .filter { !$0.contains("hid:") && !$0.contains("[mvk-info]") }
                     .suffix(40).joined(separator: "\n")
@@ -119,7 +119,7 @@ enum Diagnostics {
             }
         }
         if let gameDocs = s.paths.gameDocumentsDir,
-           let gameLog = lossyText(at: gameDocs.appendingPathComponent("log.txt")) {
+           let gameLog = logTail(at: gameDocs.appendingPathComponent("log.txt")) {
             let tail = gameLog.split(separator: "\n", omittingEmptySubsequences: true).suffix(40).joined(separator: "\n")
             if !tail.isEmpty {
                 lines.append("")
@@ -142,6 +142,19 @@ enum Diagnostics {
     static func lossyText(at url: URL) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func logTail(at url: URL, maxBytes: Int = 262_144) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        do {
+            let size = try handle.seekToEnd()
+            try handle.seek(toOffset: size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0)
+            let data = try handle.read(upToCount: maxBytes) ?? Data()
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            return nil
+        }
     }
 
     static func recentCrashReports(now: Date = Date(), directory: URL? = nil) -> [String] {

@@ -42,10 +42,11 @@ public struct WineEnvironment: Sendable {
         "__CF_USER_TEXT_ENCODING", "__CFBundleIdentifier",
     ]
 
-    /// Environment for playing: GL shim injected (when speed patches are on), SEH errors logged.
+    /// Environment for playing: GL shim injected (when speed patches are on and game uses Cossacks integration), SEH errors logged.
     public func game(settings: AppSettings) -> [String: String] {
         var env = common()
         env["WINEDEBUG"] = "-all,err+seh"
+        guard paths.profile.integration == .cossacks3 else { return env }
         if settings.enableSpeedPatches {
             if let glfix = glfixLibrary, FileManager.default.fileExists(atPath: glfix.path) {
                 env["DYLD_INSERT_LIBRARIES"] = glfix.path

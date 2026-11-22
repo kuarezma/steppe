@@ -15,7 +15,7 @@ fetch() {
         if [ -n "${VORBIS_FAST_OFFLINE_DIR:-}" ]; then
             cp "$VORBIS_FAST_OFFLINE_DIR/$archive" "$partial"
         else
-            curl --fail --location --proto '=https' --tlsv1.2 "$url" -o "$partial"
+            curl --fail --location --proto '=https' --tlsv1.2 --retry 5 --retry-all-errors --retry-delay 5 "$url" -o "$partial"
         fi
         actual=$(shasum -a 256 "$partial" | cut -d ' ' -f 1)
         [ "$actual" = "$expected" ] || { echo "Checksum mismatch: $archive" >&2; exit 1; }

@@ -70,6 +70,9 @@ probe = subprocess.run([str(build / "test_gl_context")], env=base_env, capture_o
 if probe.returncode == 77:
     print(probe.stdout.strip())
     skipped = 7
+    if os.environ.get("STEPPE_REQUIRE_GL") == "1":
+        print("FAIL required hardware GL coverage is unavailable")
+        failed += 1
     print("SKIP GL: baseline, direct, dlsym, program restore, share groups, pbuffer, reference comparison")
 elif probe.returncode:
     print("FAIL GL context probe")

@@ -62,12 +62,14 @@ public struct SteppePaths: Sendable {
 
     /// Where the game stores documents and saves inside the Windows profile.
     public var gameDocumentsDir: URL? {
-        windowsUserDir?.appendingPathComponent(profile.documentsSubpath, isDirectory: true)
+        guard let relative = profile.documentsSubpath, !relative.isEmpty else { return nil }
+        return windowsUserDir?.appendingPathComponent(relative, isDirectory: true)
     }
 
     /// Where the game stores profiles (`profile.cfg` lives inside each profile).
     public var gameProfilesDir: URL? {
-        gameDocumentsDir?.appendingPathComponent("profiles", isDirectory: true)
+        guard let relative = profile.profilesSubpath, !relative.isEmpty else { return nil }
+        return windowsUserDir?.appendingPathComponent(relative, isDirectory: true)
     }
 
     public func appManifestURL(appID: Int) -> URL {

@@ -77,6 +77,11 @@ public final class SteppeController: ObservableObject {
     private let configureGlobalLogger: Bool
     private var setupTask: Task<Void, Never>?
     private var playTask: Task<Void, Never>?
+    /// A Force Quit that is still stopping processes: anything launched now would be killed with them.
+    private var stopTask: Task<Void, Never>?
+    var isStopping: Bool { stopTask != nil }
+    private var openSteamTask: Task<Void, Never>?
+    private var openSteamGeneration: UInt64 = 0
     private var installLock: InstallLock?
     private var speedSample: (time: Date, bytes: Int64)?
     private let defaults: UserDefaults
@@ -124,7 +129,7 @@ public final class SteppeController: ObservableObject {
 
     // MARK: - Derived values
 
-    public var isBusy: Bool { setupTask != nil || playTask != nil || isMaintaining }
+    public var isBusy: Bool { setupTask != nil || playTask != nil || isMaintaining || isStopping }
     public var environment: WineEnvironment { WineEnvironment(paths: paths, nativeDir: nativeDir) }
     public var patchReport: PatchReport { cachedPatchReport }
     private var steam: SteamKit { SteamKit(paths: paths, manifest: manifest) }
@@ -148,7 +153,7 @@ public final class SteppeController: ObservableObject {
 
     public func handleDisplayChange() {
         display = runtime.primaryDisplay()
-        guard setupTask == nil, playTask == nil, !isMaintaining else { return }
+        guard !isBusy else { return }
         displayModes = nil
     }
 
@@ -176,22 +181,22 @@ public final class SteppeController: ObservableObject {
             phase = .unsupported(reason)
             return
         }
-        if setupTask != nil || playTask != nil || isMaintaining { return }
+        if isBusy { return }
 
         let ready = await isEverythingReady()
-        guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+        guard gen == operationGeneration, !isBusy else { return }
 
         if ready {
             markAllDone()
             switch await runtime.checkGameRunning(inEngine: paths.wineBundle, executableName: paths.profile.executableName) {
             case .running:
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 attachToRunningGame()
             case .notRunning:
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 phase = .ready
             case .unknown(let reason):
-                guard gen == operationGeneration, setupTask == nil, playTask == nil, !isMaintaining else { return }
+                guard gen == operationGeneration, !isBusy else { return }
                 Log.shared.warn("Process scan failed during refresh: \(reason)")
                 phase = .ready
             }
@@ -222,7 +227,8 @@ public final class SteppeController: ObservableObject {
         let gen = operationGeneration
         let url = paths.settingsFile
         let loaded = await Task.detached { AppSettings.load(from: url) }.value
-        guard gen == operationGeneration, url == paths.settingsFile else { return }
+        // Another refresh may have loaded them meanwhile: assigning now would overwrite what changed since.
+        guard !settingsLoaded, gen == operationGeneration, url == paths.settingsFile else { return }
         settings = loaded
         settingsLoaded = true
     }
@@ -264,6 +270,7 @@ public final class SteppeController: ObservableObject {
     public func setInstallLocation(_ url: URL) {
         guard canChangeInstallLocation else { return }
         operationGeneration &+= 1
+        openSteamTask?.cancel()
         let root = url.lastPathComponent == "Steppe" ? url : url.appendingPathComponent("Steppe", isDirectory: true)
         defaults.set(root.path, forKey: Self.rootDefaultsKey)
         paths = SteppePaths(root: root, profile: paths.profile, engineArchiveRoot: manifest.engineArchiveRoot)
@@ -305,14 +312,14 @@ public final class SteppeController: ObservableObject {
     }
 
     private func releaseLockIfIdle() {
-        if setupTask == nil && playTask == nil && !isMaintaining { installLock = nil }
+        if !isBusy { installLock = nil }
     }
 
     // MARK: - Setup
 
     public func startSetup() {
         autoSetupSuppressed = false
-        guard setupTask == nil, playTask == nil, !isMaintaining, isSupportedMac else { return }
+        guard !isBusy, isSupportedMac else { return }
         operationGeneration &+= 1
         activePrompt = nil
         phase = .settingUp
@@ -325,6 +332,7 @@ public final class SteppeController: ObservableObject {
     public func cancelSetup() {
         autoSetupSuppressed = true
         activePrompt = nil
+        openSteamTask?.cancel()
         setupTask?.cancel()
     }
 
@@ -363,16 +371,18 @@ public final class SteppeController: ObservableObject {
             try await ensurePrefix()
             try await ensureSteamClient()
             try await ensureSignInAndGame()
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             phase = .ready
             lastSessionNote = nil
             Log.shared.info("Setup complete")
         } catch is CancellationError {
             Log.shared.info("Setup cancelled")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             phase = .needsSetup
         } catch {
             Log.shared.error("Setup failed: \(error.localizedDescription)")
+            // A timed-out or failed step can leave Wine processes running; stop them before any retry.
+            await stopPrefix()
             failCurrentStage(error.localizedDescription)
             phase = .failed(error.localizedDescription)
         }
@@ -578,11 +588,33 @@ public final class SteppeController: ObservableObject {
 
     /// Opens Steam so the user can sign in (also used by the "Open Steam" button).
     public func openSteam() {
-        Task {
-            guard !(await runtime.isClientRunning(inEngine: paths.wineBundle)) else { return }
-            await prepareEngineAndMicrophoneForSteam()
-            steamLaunchGraceUntil = Date().addingTimeInterval(25)
-            try? runtime.launchSteamClient(paths: paths, manifest: manifest, arguments: [], environment: environment.setup(), logName: "steam-setup.log")
+        guard case .settingUp = phase, setupTask != nil, !isMaintaining, !isStopping else { return }
+        openSteamTask?.cancel()
+        openSteamGeneration &+= 1
+        let myOpenGen = openSteamGeneration
+        let gen = operationGeneration
+        let root = paths.root
+        openSteamTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.openSteamGeneration == myOpenGen {
+                    self.openSteamTask = nil
+                }
+            }
+            guard !(await self.runtime.isClientRunning(inEngine: self.paths.wineBundle)) else { return }
+            guard !Task.isCancelled, self.operationGeneration == gen, self.paths.root == root,
+                  self.setupTask != nil, !self.isMaintaining, !self.isStopping else { return }
+            await self.prepareEngineAndMicrophoneForSteam()
+            guard !Task.isCancelled, self.operationGeneration == gen, self.paths.root == root,
+                  self.setupTask != nil, !self.isMaintaining, !self.isStopping else { return }
+            self.steamLaunchGraceUntil = Date().addingTimeInterval(25)
+            try? self.runtime.launchSteamClient(
+                paths: self.paths,
+                manifest: self.manifest,
+                arguments: [],
+                environment: self.environment.setup(),
+                logName: "steam-setup.log"
+            )
         }
     }
 
@@ -599,6 +631,7 @@ public final class SteppeController: ObservableObject {
         if !(await runtime.isClientRunning(inEngine: paths.wineBundle)) {
             set(.signIn, .running(progress: nil, detail: L("Starting Steam")))
             await prepareEngineAndMicrophoneForSteam()
+            try Task.checkCancellation()
             steamLaunchGraceUntil = Date().addingTimeInterval(25)
             try runtime.launchSteamClient(paths: paths, manifest: manifest, arguments: [], environment: env, logName: "steam-setup.log")
         }
@@ -700,7 +733,7 @@ public final class SteppeController: ObservableObject {
     // MARK: - Playing
 
     public func play() {
-        guard case .ready = phase, playTask == nil, setupTask == nil, !isMaintaining, acquireLock(forPlay: true) else { return }
+        guard case .ready = phase, !isBusy, acquireLock(forPlay: true) else { return }
         operationGeneration &+= 1
         phase = .playing(L("Preparing"))
         playTask = Task { [weak self] in
@@ -717,7 +750,7 @@ public final class SteppeController: ObservableObject {
         do {
             if await runtime.isAnyProcessRunning(inEngine: paths.wineBundle) {
                 phase = .playing(L("Restarting Steam"))
-                await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+                await shutDownSteam()
             }
             try runtime.isolatePrefix(paths.prefixDir)
 
@@ -827,16 +860,17 @@ public final class SteppeController: ObservableObject {
             await finishSession(resolution: resolution, runDuration: runDuration)
         } catch is CancellationError {
             Log.shared.info("Play cancelled")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await stopPrefix()
             lastSessionNote = nil
             await reloadPatchReport()
-            phase = .ready
+            // Force Quit updates phase to .ready after all Wine processes finish stopping.
+            if !isStopping { phase = .ready }
         } catch {
             Log.shared.error("Play failed: \(error.localizedDescription)")
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
             lastSessionNote = error.localizedDescription
             await reloadPatchReport()
-            phase = .ready
+            if !isStopping { phase = .ready }
         }
     }
 
@@ -859,7 +893,7 @@ public final class SteppeController: ObservableObject {
     }
 
     private func attachToRunningGame() {
-        guard playTask == nil, setupTask == nil, !isMaintaining else { return }
+        guard !isBusy else { return }
         guard acquireLock(forPlay: true) else {
             phase = .ready
             return
@@ -879,11 +913,11 @@ public final class SteppeController: ObservableObject {
             } catch is CancellationError {
                 self.lastSessionNote = nil
                 await self.reloadPatchReport()
-                self.phase = .ready
+                if !self.isStopping { self.phase = .ready }
             } catch {
                 self.lastSessionNote = error.localizedDescription
                 await self.reloadPatchReport()
-                self.phase = .ready
+                if !self.isStopping { self.phase = .ready }
             }
         }
     }
@@ -893,9 +927,10 @@ public final class SteppeController: ObservableObject {
         applyTuning(resolution)
         if settings.quitSteamAfterGame {
             phase = .playing(L("Saving to Steam Cloud"))
-            await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment.setup())
+            await shutDownSteam()
         }
-        if let runDuration {
+        // A session that was force-quit while closing has nothing to classify.
+        if let runDuration, !Task.isCancelled {
             let sessionLogURL = paths.logsDir.appendingPathComponent("game-session.log")
             let logText = (try? Data(contentsOf: sessionLogURL)).map { String(decoding: $0, as: UTF8.self) } ?? ""
             let outcome = LaunchOutcome.classify(
@@ -914,7 +949,20 @@ public final class SteppeController: ObservableObject {
             lastSessionNote = nil
         }
         await reloadPatchReport()
-        phase = .ready
+        if !isStopping { phase = .ready }
+    }
+
+    /// Closes Steam and everything else in the prefix, even when called on behalf of a cancelled task:
+    /// inside one, every process call would fail immediately with `CancellationError` and leave Steam running.
+    func shutDownSteam() async {
+        let runtime = runtime, paths = paths, manifest = manifest, environment = environment.setup()
+        await Task.detached { await runtime.shutdownSteam(paths: paths, manifest: manifest, environment: environment) }.value
+    }
+
+    /// Stops every process of the prefix immediately, even when called from a cancelled task.
+    private func stopPrefix() async {
+        let runtime = runtime, paths = paths, environment = environment.setup()
+        await Task.detached { await runtime.killAllWine(paths: paths, environment: environment) }.value
     }
 
     private func pruneFrameTimes() {
@@ -1055,16 +1103,19 @@ public final class SteppeController: ObservableObject {
 
     /// Force-closes the game, Steam and every Wine process of the prefix.
     public func forceStop() {
-        guard !isMaintaining else { return }
+        // An uninstall already stops everything and owns the install lock until it finishes.
+        guard !isStopping, !isMaintaining else { return }
+        openSteamTask?.cancel()
         let activePlay = playTask
         activePlay?.cancel()
-        Task { [weak self] in
+        // Block new operations until every Wine process from this session has stopped.
+        stopTask = Task { [weak self] in
             guard let self else { return }
-            self.isMaintaining = true
             await self.runtime.killAllWine(paths: self.paths, environment: self.environment.setup())
             await activePlay?.value
-            self.isMaintaining = false
+            self.stopTask = nil
             self.releaseLockIfIdle()
+            if case .playing = self.phase, !self.isBusy { self.phase = .ready }
             await self.refresh(allowAutoSetup: false)
         }
     }
@@ -1104,11 +1155,14 @@ public final class SteppeController: ObservableObject {
         operationGeneration &+= 1
         autoSetupSuppressed = false
         forcePrefixRepair = false
-        let setup = setupTask, play = playTask
+        let setup = setupTask, play = playTask, stop = stopTask, openSteam = openSteamTask
         setup?.cancel()
         play?.cancel()
+        openSteam?.cancel()
         await setup?.value
         await play?.value
+        await openSteam?.value
+        await stop?.value
         guard acquireLock(forPlay: false) else {
             isMaintaining = false
             return
@@ -1131,19 +1185,27 @@ public final class SteppeController: ObservableObject {
             uninstallPaths.root.appendingPathComponent("engine.tmp", isDirectory: true),
             uninstallPaths.root.appendingPathComponent("frameworks.tmp", isDirectory: true),
         ]
-        // Keep installLock held while deleting Steppe-owned entries so another process cannot race into the partial directory.
+        // Hold installLock until all Steppe-owned entries are deleted before unlinking .steppe.lock.
         let rootDir = uninstallPaths.root
         let lockFile = rootDir.appendingPathComponent(".steppe.lock")
-        await Task.detached {
+        let allOwnedRemoved = await Task.detached {
             let fm = FileManager.default
-            for item in ownedTargets {
-                try? fm.removeItem(at: item)
+            var removedAll = true
+            for item in ownedTargets where fm.fileExists(atPath: item.path) {
+                do {
+                    try fm.removeItem(at: item)
+                } catch {
+                    removedAll = false
+                    Log.shared.error("Could not delete \(item.lastPathComponent): \(error.localizedDescription)")
+                }
             }
-            try? fm.removeItem(at: lockFile)
+            return removedAll
         }.value
         installLock = nil
-        if (try? FileManager.default.contentsOfDirectory(atPath: rootDir.path))?.isEmpty == true {
-            try? FileManager.default.removeItem(at: rootDir)
+        if allOwnedRemoved {
+            try? FileManager.default.removeItem(at: lockFile)
+            // Atomic rmdir avoids any TOCTOU window where an unrelated file enters rootDir before removal.
+            _ = Darwin.rmdir(rootDir.path)
         }
 
         defaults.removeObject(forKey: Self.rootDefaultsKey)

@@ -50,6 +50,14 @@ public enum Downloader {
         while true {
             attempt += 1
             do {
+                // Without a checksum nothing proves that a partial file and the rest the server sends belong
+                // to the same version, so unpinned downloads always start over cleanly (both across runs and retries).
+                if expectedSHA256 == nil {
+                    if fm.fileExists(atPath: part.path) {
+                        try fm.removeItem(at: part)
+                    }
+                    try? fm.removeItem(at: part.appendingPathExtension("meta"))
+                }
                 try await fetch(url: url, part: part, expectedSize: expectedSize, configuration: configuration, progress: progress)
                 let size = (try? fm.attributesOfItem(atPath: part.path)[.size] as? Int64) ?? 0
                 if let expectedSize, size != expectedSize {

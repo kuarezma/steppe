@@ -2,6 +2,26 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.12]
+
+### Fixed & Hardened
+- **Process, download & logging resilience (`ProcessKit`, `Downloader`, `Logger`)**:
+  - Redact `stderr` before `.suffix(400)` truncation in `ProcessFailure.nonZeroExit`; lock-protect pipe draining (`PipeDrain`) and process state (`ProcessState`) so task cancellation propagates `CancellationError` instead of misleading exit codes.
+  - Synchronize `DownloadDelegate` with `NSLock` across attach/cancel/completion and guard non-positive `expectedContentLength` responses; add synchronous `Log.shared.detachAndFlush()` before uninstall cleanup.
+- **Launch lifecycle, Steam & prefix safety (`SteppeController`, `GameFiles`, `SteamKit`, `WinePatcher`, `ProfileTuner`, `WineEnvironment`, `Diagnostics`, `GameProfile`)**:
+  - Detect rapid game non-start (`SetupError.gameDidNotStart`) in `runPlay()`, show `.steamClosedReopen` when Steam closes after sign-in, and harden `forceStop()` / `attachToRunningGame()` recovery so the UI never stalls in `.playing`.
+  - Cap `frames.ns.<pid>` logs by mtime, file count (`5`), and total size (`20 MB`); reset Steam download speed telemetry accurately on restart or lower byte counts; run pre-repair free-space checks (`16 GB` initial / `11 GB` after engine via `GameProfile`) before deleting repair markers.
+  - Extend hash-guarded restores to audio DLLs (`ogg.dll`, `vorbis.dll`, `vorbisfile.dll`) and clear `patchLogFile` on restore; block `appmanifest` `installdir` path traversal; verify audio entitlements with `codesign --verify --strict`; insert missing `UseMultithreadedMode` cleanly inside the `Engine` block preserving LF/CRLF; run `dismiss-dialog.exe` and `list-modes.exe` under `WineEnvironment.tool()`; move `Diagnostics.export` off the main actor.
+- **Native shims (`glfix`, `vorbis-fast`, `dialog-helper`)**:
+  - Replace fixed global bone array in `pbemu.c` with a mutex-protected share-group-aware `BoneLocEntry` cache, save/restore `GL_PACK_ALIGNMENT` and `GL_READ_BUFFER` in `pb_CGLTexImagePBuffer`, guard cross-sharegroup FBO attachments, cache `GLFIX_BUSHTEST` with dynamic multi-match `patch_bush_shader` allocation, and call `dispatch_release` under MRC in `cmdfilter.m`.
+  - Make `ambient` file bypass case-insensitive, enforce single-stream checks and bounded `OV_HOLE` retries (`16`), enforce full `channels * word` frame alignment in `ov_read`, and guard zero-length vectors in `fast_plane_dist_sse` (`vorbisfile_fast.c`); validate `GetClientRect` in `dismiss_dialog.c`.
+
+### Improvements & Tests
+- **UI, localization, CLI, scripts & docs (`Steppe`, `steppe-cli`, `Scripts`, `docs`)**:
+  - Disable *Check for Updates…* while busy, remove duplicate folder-picker refreshes, add a missing-folder toast and zero/singular/plural restore messages (EN/TR), and filter `resolutionChoices` by height.
+  - Validate per-command flags in `steppe-cli`; enforce non-overlapping prerelease `CFBundleVersion` offsets in `Scripts/build-app.sh` and exact filename matching in `Scripts/install.sh`; keep `README.md`, `README.tr.md`, `CONTRIBUTING.md`, and `docs/TROUBLESHOOTING.md` synced.
+  - Expanded `AuditFixesTests` by 10 regression tests (104 XCTest cases total) and added native test coverage for share-group isolation, `GL_PACK_ALIGNMENT`, multi-match shader patching, and stereo/ambient `vorbis-fast` paths.
+
 ## [0.1.11]
 
 ### Added
